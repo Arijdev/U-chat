@@ -89,9 +89,10 @@ export function createSignaling(userId: string) {
         filter: `to_id=eq.${userId}`,
       },
       (payload) => {
-        console.debug('[v0] signaling payload received', payload)
         try {
-          const newRow = payload.new
+          const newRow = payload.new || {}
+          // Minimal info to keep console manageable
+          console.info('[v0] signaling payload received', { type: newRow.type, from: newRow.from_id })
           const msg: SignalingMessage = {
             type: newRow.type,
             from: newRow.from_id,

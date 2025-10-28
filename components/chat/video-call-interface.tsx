@@ -24,6 +24,8 @@ export function VideoCallInterface({ callType, otherUserName, onCallEnd, onClose
   const [error, setError] = useState<string | null>(null)
   const [mediaStream, setMediaStream] = useState<MediaStream | null>(null)
   const [screenStream, setScreenStream] = useState<MediaStream | null>(null)
+  const [pcState, setPcState] = useState<string>('new')
+  const [pcIceState, setPcIceState] = useState<string>('new')
 
   const localVideoRef = useRef<HTMLVideoElement>(null)
   const remoteVideoRef = useRef<HTMLVideoElement>(null)
@@ -33,6 +35,20 @@ export function VideoCallInterface({ callType, otherUserName, onCallEnd, onClose
   const removeSignalingListenerRef = useRef<() => void | null>(null)
 
   const setupPeerConnection = async (localStream: MediaStream) => {
+    // Ensure only one PeerConnection exists at a time
+    if (pcRef.current) {
+      try {
+        pcRef.current.close()
+      } catch (e) {}
+      pcRef.current = null
+    }
+    if (removeSignalingListenerRef.current) {
+      try {
+        removeSignalingListenerRef.current()
+      } catch (e) {}
+      removeSignalingListenerRef.current = null
+    }
+
     if (!signaling || !localUserId || !otherUserId) {
       console.warn(' Missing signaling or user ids for peer connection')
     }
@@ -45,8 +61,14 @@ export function VideoCallInterface({ callType, otherUserName, onCallEnd, onClose
 
     pc.ontrack = (event) => {
       try {
-        const remoteStream = event.streams && event.streams[0]
+        // Prefer event.streams[0] if available, otherwise build a stream from tracks
+        const remoteStream = (event.streams && event.streams[0]) || new MediaStream(event.track ? [event.track] : [])
         if (remoteVideoRef.current && remoteStream) {
+          // log track kinds to help debug missing audio/video
+          try {
+            const kinds = remoteStream.getTracks().map((t) => t.kind)
+            console.info('[pc] ontrack - remote stream tracks:', kinds)
+          } catch (e) {}
           remoteVideoRef.current.srcObject = remoteStream
         }
       } catch (err) {
@@ -57,7 +79,8 @@ export function VideoCallInterface({ callType, otherUserName, onCallEnd, onClose
     pc.onicecandidate = (ev) => {
       if (ev.candidate) {
         try {
-          console.debug('[pc] sending candidate', ev.candidate)
+          // reduced logging to avoid console spam
+          console.info('[pc] sending candidate')
           signaling?.send({ type: 'webrtc-candidate', from: localUserId, to: otherUserId, candidate: ev.candidate })
         } catch (err) {
           console.warn(' send candidate failed', err)
@@ -66,49 +89,63 @@ export function VideoCallInterface({ callType, otherUserName, onCallEnd, onClose
     }
 
     pc.onconnectionstatechange = () => {
-      console.debug('[pc] connectionState:', pc.connectionState)
+      console.info('[pc] connectionState:', pc.connectionState)
+      setPcState(pc.connectionState)
     }
 
     pc.oniceconnectionstatechange = () => {
-      console.debug('[pc] iceConnectionState:', pc.iceConnectionState)
+      console.info('[pc] iceConnectionState:', pc.iceConnectionState)
+      setPcIceState(pc.iceConnectionState)
     }
 
-    // add local tracks
+    // add or replace local tracks (avoid duplicate tracks causing flicker)
     try {
-      localStream.getTracks().forEach((track) => pc.addTrack(track, localStream))
+      const existingSenders = pc.getSenders()
+      localStream.getTracks().forEach((track) => {
+        const sender = existingSenders.find((s) => s.track && s.track.kind === track.kind)
+        if (sender) {
+          try {
+            sender.replaceTrack(track)
+          } catch (e) {
+            // fallback to addTrack if replace fails
+            try {
+              pc.addTrack(track, localStream)
+            } catch (e2) {}
+          }
+        } else {
+          pc.addTrack(track, localStream)
+        }
+      })
     } catch (err) {
-      console.warn(' addTrack failed', err)
+      console.warn(' add/replaceTrack failed', err)
     }
 
-    // listen for signaling messages
+    // listen for signaling messages (ensure single listener)
     if (signaling?.addListener) {
       const remove = signaling.addListener(async (msg: any) => {
-        console.debug('[signaling] received msg in pc listener', msg)
+        // minimal logging
         if (msg.to && msg.to !== localUserId) return
         try {
           switch (msg.type) {
             case 'webrtc-offer':
-              // remote offer -> set remote desc and answer
               if (msg.sdp) {
-                console.debug('[pc] received offer, setting remote description')
+                console.info('[pc] received offer')
                 await pc.setRemoteDescription({ type: 'offer', sdp: msg.sdp } as any)
                 const answer = await pc.createAnswer()
-                console.debug('[pc] created answer')
                 await pc.setLocalDescription(answer)
                 signaling.send({ type: 'webrtc-answer', from: localUserId, to: msg.from, sdp: answer.sdp })
-                console.debug('[pc] sent answer')
+                console.info('[pc] sent answer')
               }
               break
             case 'webrtc-answer':
               if (msg.sdp) {
-                console.debug('[pc] received answer, setting remote description')
+                console.info('[pc] received answer')
                 await pc.setRemoteDescription({ type: 'answer', sdp: msg.sdp } as any)
               }
               break
             case 'webrtc-candidate':
               if (msg.candidate) {
                 try {
-                  console.debug('[pc] adding remote candidate', msg.candidate)
                   await pc.addIceCandidate(msg.candidate)
                 } catch (err) {
                   console.warn(' addIceCandidate failed', err)
@@ -129,11 +166,9 @@ export function VideoCallInterface({ callType, otherUserName, onCallEnd, onClose
     if (isCaller) {
       try {
         const offer = await pc.createOffer()
-        console.debug('[pc] created offer')
         await pc.setLocalDescription(offer)
-        console.debug('[pc] setLocalDescription called')
         signaling?.send({ type: 'webrtc-offer', from: localUserId, to: otherUserId, sdp: offer.sdp })
-        console.debug('[pc] offer sent via signaling')
+        console.info('[pc] offer sent')
       } catch (err) {
         console.warn(' createOffer failed', err)
       }
@@ -178,7 +213,7 @@ export function VideoCallInterface({ callType, otherUserName, onCallEnd, onClose
       // remove signaling listener
       if (removeSignalingListenerRef.current) removeSignalingListenerRef.current()
     }
-  }, [callType, mediaStream, screenStream])
+  }, [callType])
 
   useEffect(() => {
     callTimerRef.current = setInterval(() => {
@@ -473,6 +508,7 @@ export function VideoCallInterface({ callType, otherUserName, onCallEnd, onClose
             {callType === "video" && (isVideoOn ? " • 📹 Camera On" : " • 📹 Camera Off")}
             {isScreenSharing && " • 🖥️ Sharing Screen"}
           </p>
+          <p className="text-xs text-gray-400 mt-2">Connection: {pcState} • ICE: {pcIceState}</p>
         </div>
       </div>
     </div>
