@@ -577,9 +577,9 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
   return (
     <div className="flex-1 flex flex-col bg-white">
       {/* Header */}
-      <div className="border-b border-gray-200 p-3 md:p-4 flex items-center justify-between bg-gradient-to-r from-blue-50 to-indigo-50">
+        <div className="border-b border-gray-200 p-3 md:p-4 flex items-center justify-between bg-linear-to-r from-blue-50 to-indigo-50">
         <div className="flex items-center gap-2 md:gap-3 min-w-0">
-          <div className="w-8 md:w-10 h-8 md:h-10 bg-gradient-to-br from-blue-400 to-indigo-600 rounded-full flex items-center justify-center text-white font-semibold text-sm md:text-base flex-shrink-0">
+          <div className="w-8 md:w-10 h-8 md:h-10 bg-linear-to-br from-blue-400 to-indigo-600 rounded-full flex items-center justify-center text-white font-semibold text-sm md:text-base shrink-0">
             {otherUser?.display_name?.[0]?.toUpperCase() || "?"}
           </div>
           <div className="min-w-0">
@@ -589,7 +589,7 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
             <p className="text-xs md:text-sm text-gray-500 truncate">{otherUser?.email || ""}</p>
           </div>
         </div>
-        <div className="flex gap-1 md:gap-2 flex-shrink-0">
+          <div className="flex gap-1 md:gap-2 shrink-0">
           <Button
             size="sm"
             variant="ghost"
@@ -673,7 +673,7 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
         <div className="fixed top-4 right-4 z-50 pointer-events-auto">
           <div className="w-72 bg-white/95 backdrop-blur-sm rounded-lg shadow-lg border border-gray-200 overflow-hidden">
             <div className="flex items-center gap-3 p-3">
-              <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-400 to-indigo-600 flex items-center justify-center text-white font-semibold text-lg">
+              <div className="w-12 h-12 rounded-full bg-linear-to-br from-blue-400 to-indigo-600 flex items-center justify-center text-white font-semibold text-lg">
                 {incomingCall.callerName?.[0]?.toUpperCase() || "?"}
               </div>
               <div className="flex-1 min-w-0">
@@ -769,7 +769,7 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
           <Button
             size="sm"
             variant="ghost"
-            className="text-gray-600 hover:text-blue-600 h-8 md:h-10 w-8 md:w-10 p-0 flex-shrink-0"
+            className="text-gray-600 hover:text-blue-600 h-8 md:h-10 w-8 md:w-10 p-0 shrink-0"
             onClick={() => fileInputRef.current?.click()}
             title="Send Photo"
           >
@@ -777,7 +777,7 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
           </Button>
           <input ref={fileInputRef} type="file" accept="image/*" onChange={handlePhotoSelect} className="hidden" />
 
-          <div className="relative flex-shrink-0">
+          <div className="relative shrink-0">
             <Button
               size="sm"
               variant="ghost"
@@ -814,7 +814,7 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
           <Button
             onClick={handleSendMessage}
             disabled={!newMessage.trim()}
-            className="bg-blue-600 hover:bg-blue-700 text-white h-8 md:h-10 px-3 md:px-4 flex-shrink-0"
+            className="bg-blue-600 hover:bg-blue-700 text-white h-8 md:h-10 px-3 md:px-4 shrink-0"
           >
             <Send className="w-4 md:w-5 h-4 md:h-5" />
           </Button>

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { PhoneOff, Mic, MicOff, Video, VideoOff, Share2 } from "lucide-react"
+import { createClient } from "@/lib/supabase/client"
 
 interface VideoCallInterfaceProps {
   callType: "voice" | "video"
@@ -17,6 +18,8 @@ interface VideoCallInterfaceProps {
 }
 
 export function VideoCallInterface({ callType, otherUserName, onCallEnd, onClose, signaling, localUserId, otherUserId, conversationId, isCaller, }: VideoCallInterfaceProps) {
+  const [isFullScreen, setIsFullScreen] = useState(false)
+  const [isFrontCamera, setIsFrontCamera] = useState(true)
   const [callDuration, setCallDuration] = useState(0)
   const [isMuted, setIsMuted] = useState(false)
   const [isVideoOn, setIsVideoOn] = useState(callType === "video")
@@ -29,6 +32,7 @@ export function VideoCallInterface({ callType, otherUserName, onCallEnd, onClose
 
   const localVideoRef = useRef<HTMLVideoElement>(null)
   const remoteVideoRef = useRef<HTMLVideoElement>(null)
+  const remoteAudioRef = useRef<HTMLAudioElement>(null)
   const callTimerRef = useRef<NodeJS.Timeout | null>(null)
   const startTimeRef = useRef<number>(Date.now())
   const pcRef = useRef<RTCPeerConnection | null>(null)
@@ -65,13 +69,20 @@ export function VideoCallInterface({ callType, otherUserName, onCallEnd, onClose
       try {
         // Prefer event.streams[0] if available, otherwise build a stream from tracks
         const remoteStream = (event.streams && event.streams[0]) || new MediaStream(event.track ? [event.track] : [])
+        // Attach video to remoteVideoRef (if present)
         if (remoteVideoRef.current && remoteStream) {
-          // log track kinds to help debug missing audio/video
-            try {
-            const kinds = remoteStream.getTracks().map((t) => t.kind)
-            console.debug('[pc] ontrack - remote stream tracks:', kinds)
-          } catch (e) {}
           remoteVideoRef.current.srcObject = remoteStream
+        }
+        // If stream has audio tracks, attach to audio element and play
+        try {
+          const hasAudio = remoteStream.getAudioTracks().length > 0
+          if (hasAudio && remoteAudioRef.current) {
+            remoteAudioRef.current.srcObject = remoteStream
+            // attempt to play (should succeed after user gesture)
+            void remoteAudioRef.current.play().catch(() => {})
+          }
+        } catch (e) {
+          // non-fatal
         }
       } catch (err) {
         console.warn(' ontrack error', err)
@@ -80,9 +91,7 @@ export function VideoCallInterface({ callType, otherUserName, onCallEnd, onClose
 
     pc.onicecandidate = (ev) => {
       if (ev.candidate) {
-          try {
-          // reduced logging to avoid console spam
-          console.debug('[pc] sending candidate')
+        try {
           signaling?.send({ type: 'webrtc-candidate', from: localUserId, to: otherUserId, candidate: ev.candidate })
         } catch (err) {
           console.warn(' send candidate failed', err)
@@ -91,12 +100,10 @@ export function VideoCallInterface({ callType, otherUserName, onCallEnd, onClose
     }
 
     pc.onconnectionstatechange = () => {
-      console.debug('[pc] connectionState:', pc.connectionState)
       setPcState(pc.connectionState)
     }
 
     pc.oniceconnectionstatechange = () => {
-      console.debug('[pc] iceConnectionState:', pc.iceConnectionState)
       setPcIceState(pc.iceConnectionState)
     }
 
@@ -131,7 +138,7 @@ export function VideoCallInterface({ callType, otherUserName, onCallEnd, onClose
           switch (msg.type) {
             case 'webrtc-offer':
               if (msg.sdp) {
-                console.debug('[pc] received offer')
+                // received offer
                 await pc.setRemoteDescription({ type: 'offer', sdp: msg.sdp } as any)
                 // flush any pending remote candidates now that remote description is set
                 try {
@@ -145,12 +152,12 @@ export function VideoCallInterface({ callType, otherUserName, onCallEnd, onClose
                 const answer = await pc.createAnswer()
                 await pc.setLocalDescription(answer)
                 signaling.send({ type: 'webrtc-answer', from: localUserId, to: msg.from, sdp: answer.sdp })
-                console.debug('[pc] sent answer')
+                // sent answer
               }
               break
             case 'webrtc-answer':
               if (msg.sdp) {
-                console.debug('[pc] received answer')
+                // received answer
                 await pc.setRemoteDescription({ type: 'answer', sdp: msg.sdp } as any)
                 // flush pending candidates after remote desc
                 try {
@@ -198,7 +205,7 @@ export function VideoCallInterface({ callType, otherUserName, onCallEnd, onClose
         const offer = await pc.createOffer()
         await pc.setLocalDescription(offer)
         signaling?.send({ type: 'webrtc-offer', from: localUserId, to: otherUserId, sdp: offer.sdp })
-  console.debug('[pc] offer sent')
+  // offer sent
       } catch (err) {
         console.warn(' createOffer failed', err)
       }
@@ -219,14 +226,14 @@ export function VideoCallInterface({ callType, otherUserName, onCallEnd, onClose
           localVideoRef.current.srcObject = stream
         }
 
-  console.debug(" Media stream initialized:", { audio: true, video: callType === "video" })
+  // media stream initialized
 
         // initialize peer connection
         await setupPeerConnection(stream)
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : "Failed to access media devices"
         setError(errorMsg)
-  console.debug(" Media access error:", errorMsg)
+  // media access error
       }
     }
 
@@ -274,7 +281,7 @@ export function VideoCallInterface({ callType, otherUserName, onCallEnd, onClose
         console.warn(' toggleMicrophone sender update failed', err)
       }
       setIsMuted(!isMuted)
-  console.debug(" Microphone toggled:", !isMuted ? "off" : "on")
+  // microphone toggled
     }
   }
 
@@ -298,7 +305,7 @@ export function VideoCallInterface({ callType, otherUserName, onCallEnd, onClose
         }
       }
       setIsVideoOn(!isVideoOn)
-  console.debug(" Camera toggled:", !isVideoOn ? "off" : "on")
+  // camera toggled
     }
   }
 
@@ -340,9 +347,9 @@ export function VideoCallInterface({ callType, otherUserName, onCallEnd, onClose
       }
 
       setIsScreenSharing(true)
-  console.debug(" Screen sharing started")
+  // screen sharing started
     } catch (err) {
-  console.debug(" Screen share error:", err)
+  // screen share error
     }
   }
 
@@ -360,27 +367,45 @@ export function VideoCallInterface({ callType, otherUserName, onCallEnd, onClose
     setScreenStream(null)
     setIsScreenSharing(false)
     if (localVideoRef.current && mediaStream) localVideoRef.current.srcObject = mediaStream
-  console.debug(" Screen sharing stopped")
+  // screen sharing stopped
   }
 
   const handleEndCall = () => {
     if (callTimerRef.current) clearInterval(callTimerRef.current)
-    try {
-      mediaStream?.getTracks().forEach((track) => track.stop())
-    } catch (err) {}
-    try {
-      screenStream?.getTracks().forEach((track) => track.stop())
-    } catch (err) {}
 
-    // clear media elements
-    try {
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = null
+    // Cleanup function to handle a MediaStream
+    const cleanupStream = (stream: MediaStream | null) => {
+      if (!stream) return;
+      try {
+        stream.getTracks().forEach(track => {
+          track.enabled = false;  // Immediately disable track
+          track.stop();          // Then stop it
+        });
+      } catch (err) {
+        console.warn('Error stopping stream tracks:', err);
       }
-      if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = null
+    };
+
+    // Clean up all media streams
+    cleanupStream(mediaStream);
+    cleanupStream(screenStream);
+
+    // Clear all media elements
+    const cleanupMediaElement = (element: HTMLMediaElement | null) => {
+      if (!element) return;
+      try {
+        const stream = element.srcObject as MediaStream | null;
+        cleanupStream(stream);
+        element.srcObject = null;
+        element.load(); // Force cleanup of media resources
+      } catch (err) {
+        console.warn('Error cleaning media element:', err);
       }
-    } catch (err) {}
+    };
+
+    cleanupMediaElement(localVideoRef.current);
+    cleanupMediaElement(remoteVideoRef.current);
+    cleanupMediaElement(remoteAudioRef.current);
 
     setMediaStream(null)
     setScreenStream(null)
@@ -416,10 +441,28 @@ export function VideoCallInterface({ callType, otherUserName, onCallEnd, onClose
       console.warn(' cleaning media elements failed', e)
     }
 
-    // diagnostic: list devices (labels may appear only when permission granted)
-    try {
-  navigator.mediaDevices.enumerateDevices().then((devices) => console.debug(' devices after end:', devices))
-    } catch (e) {}
+    // Record call duration in call_history
+    const updateCallHistory = async () => {
+      try {
+        const supabase = createClient()
+        const callHistoryUpdate = {
+          duration_seconds: callDuration,
+          status: 'completed'
+        }
+
+        // Update the call record
+        await supabase
+          .from('call_history')
+          .update(callHistoryUpdate)
+          .eq('conversation_id', conversationId)
+          .eq('status', 'in-progress')
+      } catch (e) {
+        console.warn('Failed to update call history:', e)
+      }
+    }
+
+    // Update call history
+    updateCallHistory()
 
     onCallEnd(callDuration)
     onClose()
@@ -433,12 +476,29 @@ export function VideoCallInterface({ callType, otherUserName, onCallEnd, onClose
 
   return (
     <div className="fixed inset-0 bg-black z-50 flex flex-col">
+      {/* global hidden audio element for remote audio */}
+      <audio ref={remoteAudioRef} autoPlay style={{ display: 'none' }} />
       {/* Video Container */}
       <div className="flex-1 relative bg-black">
         {callType === "video" ? (
           <>
-            {/* Remote Video */}
-            <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-contain bg-black" />
+        {/* Remote Video (centered & constrained on large screens) */}
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className={`relative ${isFullScreen ? 'fixed inset-0 z-50 bg-black' : ''}`}>
+                <video 
+                  ref={remoteVideoRef} 
+                  autoPlay 
+                  playsInline 
+                  className={`${isFullScreen ? 'w-screen h-screen' : 'max-w-[90vw] max-h-[80vh]'} w-auto h-auto object-contain bg-black`} 
+                />
+                <button
+                  onClick={() => setIsFullScreen(!isFullScreen)}
+                  className="absolute top-4 right-4 bg-black/50 text-white p-2 rounded-full"
+                >
+                  {isFullScreen ? '🔄' : '⛶'}
+                </button>
+              </div>
+            </div>
 
             {/* Local Video (Picture in Picture) */}
             {!isScreenSharing && (
@@ -454,12 +514,56 @@ export function VideoCallInterface({ callType, otherUserName, onCallEnd, onClose
                 <span className="text-sm font-semibold">Sharing Screen</span>
               </div>
             )}
+
+            {/* Mobile Camera Rotate Button */}
+            {callType === "video" && "mediaDevices" in navigator && (
+              <button
+                onClick={() => {
+                  setIsFrontCamera(!isFrontCamera);
+                  if (mediaStream) {
+                    const constraints = {
+                      audio: true,
+                      video: { facingMode: isFrontCamera ? "environment" : "user" }
+                    };
+                    navigator.mediaDevices.getUserMedia(constraints)
+                      .then(newStream => {
+                        // Stop old tracks
+                        mediaStream.getVideoTracks().forEach(track => track.stop());
+                        
+                        // Set up new stream
+                        const newVideoTrack = newStream.getVideoTracks()[0];
+                        const audioTrack = mediaStream.getAudioTracks()[0];
+                        const updatedStream = new MediaStream([newVideoTrack, audioTrack]);
+                        setMediaStream(updatedStream);
+                        
+                        if (localVideoRef.current) {
+                          localVideoRef.current.srcObject = updatedStream;
+                        }
+                        
+                        // Update peer connection
+                        const pc = pcRef.current;
+                        if (pc) {
+                          const videoSender = pc.getSenders().find(s => s.track?.kind === "video");
+                          if (videoSender) {
+                            videoSender.replaceTrack(newVideoTrack);
+                          }
+                        }
+                      })
+                      .catch(err => console.warn("Camera switch failed:", err));
+                  }
+                }}
+                className="absolute top-4 right-4 bg-black/50 text-white p-2 rounded-full z-20"
+                title={`Switch to ${isFrontCamera ? "back" : "front"} camera`}
+              >
+                📱
+              </button>
+            )}
           </>
         ) : (
           /* Voice Call UI */
           <div className="flex items-center justify-center h-full">
             <div className="text-center">
-              <div className="w-24 h-24 md:w-32 md:h-32 bg-gradient-to-br from-blue-400 to-indigo-600 rounded-full flex items-center justify-center mx-auto mb-6">
+              <div className="w-24 h-24 md:w-32 md:h-32 bg-linear-to-br from-blue-400 to-indigo-600 rounded-full flex items-center justify-center mx-auto mb-6">
                 <span className="text-5xl md:text-6xl">📞</span>
               </div>
               <p className="text-2xl md:text-3xl font-semibold text-white mb-2">{otherUserName}</p>
@@ -477,7 +581,7 @@ export function VideoCallInterface({ callType, otherUserName, onCallEnd, onClose
       )}
 
       {/* Controls */}
-      <div className="bg-gray-900 border-t border-gray-700 p-4 md:p-6">
+      <div className="bg-gray-900 border-t border-gray-700 p-3 md:p-4">
         <div className="flex items-center justify-center gap-4 md:gap-6">
           {/* Call Duration */}
           <div className="text-white text-center min-w-20">

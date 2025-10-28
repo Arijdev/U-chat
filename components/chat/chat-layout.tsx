@@ -100,7 +100,7 @@ export default function ChatLayout({ user }: { user: User }) {
       ) : selectedConversation ? (
         <ChatWindow conversationId={selectedConversation} user={user} />
       ) : (
-        <div className="flex-1 flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 hidden md:flex">
+          <div className="flex-1 flex items-center justify-center bg-linear-to-br from-blue-50 to-indigo-100 md:flex">
           <div className="text-center">
             <div className="text-6xl mb-4">💬</div>
             <h2 className="text-2xl font-bold text-gray-900 mb-2">Select a conversation</h2>
