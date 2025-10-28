@@ -700,21 +700,33 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
 
       {/* VideoCallInterface component for active calls */}
       {activeCall && (
-        <VideoCallInterface
-          callType={activeCall.type}
-          otherUserName={otherUser?.display_name || "User"}
-          onCallEnd={handleCallEnd}
-          onClose={() => {
-            setActiveCall(null)
-            setIsCaller(false)
-            if (callTimerRef.current) clearInterval(callTimerRef.current)
-          }}
-          signaling={signalingRef.current}
-          localUserId={user.id}
-          otherUserId={otherUser?.id}
-          conversationId={conversationId}
-          isCaller={isCaller}
-        />
+        <div>
+          {/* Debug info for calls not working */}
+          <div className="fixed top-0 left-0 bg-black bg-opacity-75 text-white p-4 z-[60] text-xs font-mono">
+            <p>Call debug info:</p>
+            <p>localUserId: {user.id || 'missing'}</p>
+            <p>otherUserId: {otherUser?.id || 'missing'}</p>
+            <p>signaling: {signalingRef.current ? 'connected' : 'missing'}</p>
+            <p>isCaller: {isCaller ? 'yes' : 'no'}</p>
+            <p>callType: {activeCall.type}</p>
+          </div>
+
+          <VideoCallInterface
+            callType={activeCall.type}
+            otherUserName={otherUser?.display_name || "User"}
+            onCallEnd={handleCallEnd}
+            onClose={() => {
+              setActiveCall(null)
+              setIsCaller(false)
+              if (callTimerRef.current) clearInterval(callTimerRef.current)
+            }}
+            signaling={signalingRef.current}
+            localUserId={user.id}
+            otherUserId={otherUser?.id}
+            conversationId={conversationId}
+            isCaller={isCaller}
+          />
+        </div>
       )}
 
       {/* Photo Preview Modal */}
