@@ -57,11 +57,20 @@ export function VideoCallInterface({ callType, otherUserName, onCallEnd, onClose
     pc.onicecandidate = (ev) => {
       if (ev.candidate) {
         try {
+          console.debug('[pc] sending candidate', ev.candidate)
           signaling?.send({ type: 'webrtc-candidate', from: localUserId, to: otherUserId, candidate: ev.candidate })
         } catch (err) {
           console.warn(' send candidate failed', err)
         }
       }
+    }
+
+    pc.onconnectionstatechange = () => {
+      console.debug('[pc] connectionState:', pc.connectionState)
+    }
+
+    pc.oniceconnectionstatechange = () => {
+      console.debug('[pc] iceConnectionState:', pc.iceConnectionState)
     }
 
     // add local tracks
@@ -74,26 +83,32 @@ export function VideoCallInterface({ callType, otherUserName, onCallEnd, onClose
     // listen for signaling messages
     if (signaling?.addListener) {
       const remove = signaling.addListener(async (msg: any) => {
+        console.debug('[signaling] received msg in pc listener', msg)
         if (msg.to && msg.to !== localUserId) return
         try {
           switch (msg.type) {
             case 'webrtc-offer':
               // remote offer -> set remote desc and answer
               if (msg.sdp) {
+                console.debug('[pc] received offer, setting remote description')
                 await pc.setRemoteDescription({ type: 'offer', sdp: msg.sdp } as any)
                 const answer = await pc.createAnswer()
+                console.debug('[pc] created answer')
                 await pc.setLocalDescription(answer)
                 signaling.send({ type: 'webrtc-answer', from: localUserId, to: msg.from, sdp: answer.sdp })
+                console.debug('[pc] sent answer')
               }
               break
             case 'webrtc-answer':
               if (msg.sdp) {
+                console.debug('[pc] received answer, setting remote description')
                 await pc.setRemoteDescription({ type: 'answer', sdp: msg.sdp } as any)
               }
               break
             case 'webrtc-candidate':
               if (msg.candidate) {
                 try {
+                  console.debug('[pc] adding remote candidate', msg.candidate)
                   await pc.addIceCandidate(msg.candidate)
                 } catch (err) {
                   console.warn(' addIceCandidate failed', err)
@@ -114,8 +129,11 @@ export function VideoCallInterface({ callType, otherUserName, onCallEnd, onClose
     if (isCaller) {
       try {
         const offer = await pc.createOffer()
+        console.debug('[pc] created offer')
         await pc.setLocalDescription(offer)
+        console.debug('[pc] setLocalDescription called')
         signaling?.send({ type: 'webrtc-offer', from: localUserId, to: otherUserId, sdp: offer.sdp })
+        console.debug('[pc] offer sent via signaling')
       } catch (err) {
         console.warn(' createOffer failed', err)
       }
