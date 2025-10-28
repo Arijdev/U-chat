@@ -6,11 +6,22 @@ export async function POST(req: Request) {
     const body = await req.json()
     const { conversationId, from, to, type, payload, callType, fromName, sdp, candidate } = body
 
-    const url = process.env.SUPABASE_URL
+    // Use the same env vars as set in Vercel
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
     if (!url || !serviceKey) {
-      return NextResponse.json({ error: 'Server misconfigured: SUPABASE_SERVICE_ROLE_KEY missing' }, { status: 500 })
+      console.error('[api/signaling] Missing env vars:', { 
+        hasUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
+        hasServiceKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY
+      })
+      return NextResponse.json({ 
+        error: 'Server misconfigured: Check NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY',
+        debug: {
+          url: !!url,
+          key: !!serviceKey
+        }
+      }, { status: 500 })
     }
 
     const supabase = createClient(url, serviceKey)
