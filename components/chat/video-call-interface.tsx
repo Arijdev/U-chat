@@ -33,6 +33,8 @@ export function VideoCallInterface({ callType, otherUserName, onCallEnd, onClose
   const startTimeRef = useRef<number>(Date.now())
   const pcRef = useRef<RTCPeerConnection | null>(null)
   const removeSignalingListenerRef = useRef<() => void | null>(null)
+  const pendingCandidatesRef = useRef<any[]>([])
+  const seenCandidatesRef = useRef<Set<string>>(new Set())
 
   const setupPeerConnection = async (localStream: MediaStream) => {
     // Ensure only one PeerConnection exists at a time
@@ -65,9 +67,9 @@ export function VideoCallInterface({ callType, otherUserName, onCallEnd, onClose
         const remoteStream = (event.streams && event.streams[0]) || new MediaStream(event.track ? [event.track] : [])
         if (remoteVideoRef.current && remoteStream) {
           // log track kinds to help debug missing audio/video
-          try {
+            try {
             const kinds = remoteStream.getTracks().map((t) => t.kind)
-            console.info('[pc] ontrack - remote stream tracks:', kinds)
+            console.debug('[pc] ontrack - remote stream tracks:', kinds)
           } catch (e) {}
           remoteVideoRef.current.srcObject = remoteStream
         }
@@ -78,9 +80,9 @@ export function VideoCallInterface({ callType, otherUserName, onCallEnd, onClose
 
     pc.onicecandidate = (ev) => {
       if (ev.candidate) {
-        try {
+          try {
           // reduced logging to avoid console spam
-          console.info('[pc] sending candidate')
+          console.debug('[pc] sending candidate')
           signaling?.send({ type: 'webrtc-candidate', from: localUserId, to: otherUserId, candidate: ev.candidate })
         } catch (err) {
           console.warn(' send candidate failed', err)
@@ -89,12 +91,12 @@ export function VideoCallInterface({ callType, otherUserName, onCallEnd, onClose
     }
 
     pc.onconnectionstatechange = () => {
-      console.info('[pc] connectionState:', pc.connectionState)
+      console.debug('[pc] connectionState:', pc.connectionState)
       setPcState(pc.connectionState)
     }
 
     pc.oniceconnectionstatechange = () => {
-      console.info('[pc] iceConnectionState:', pc.iceConnectionState)
+      console.debug('[pc] iceConnectionState:', pc.iceConnectionState)
       setPcIceState(pc.iceConnectionState)
     }
 
@@ -129,24 +131,52 @@ export function VideoCallInterface({ callType, otherUserName, onCallEnd, onClose
           switch (msg.type) {
             case 'webrtc-offer':
               if (msg.sdp) {
-                console.info('[pc] received offer')
+                console.debug('[pc] received offer')
                 await pc.setRemoteDescription({ type: 'offer', sdp: msg.sdp } as any)
+                // flush any pending remote candidates now that remote description is set
+                try {
+                  for (const c of pendingCandidatesRef.current) {
+                    await pc.addIceCandidate(c)
+                  }
+                } catch (e) {
+                  console.warn(' flush pending candidates failed', e)
+                }
+                pendingCandidatesRef.current = []
                 const answer = await pc.createAnswer()
                 await pc.setLocalDescription(answer)
                 signaling.send({ type: 'webrtc-answer', from: localUserId, to: msg.from, sdp: answer.sdp })
-                console.info('[pc] sent answer')
+                console.debug('[pc] sent answer')
               }
               break
             case 'webrtc-answer':
               if (msg.sdp) {
-                console.info('[pc] received answer')
+                console.debug('[pc] received answer')
                 await pc.setRemoteDescription({ type: 'answer', sdp: msg.sdp } as any)
+                // flush pending candidates after remote desc
+                try {
+                  for (const c of pendingCandidatesRef.current) {
+                    await pc.addIceCandidate(c)
+                  }
+                } catch (e) {
+                  console.warn(' flush pending candidates after answer failed', e)
+                }
+                pendingCandidatesRef.current = []
               }
               break
             case 'webrtc-candidate':
               if (msg.candidate) {
                 try {
-                  await pc.addIceCandidate(msg.candidate)
+                  // dedupe candidates to avoid repeated adds
+                  const key = JSON.stringify(msg.candidate)
+                  if (seenCandidatesRef.current.has(key)) break
+                  seenCandidatesRef.current.add(key)
+                  // If remote description not yet set, queue candidate
+                  const rd = pc.remoteDescription
+                  if (!rd || !rd.type) {
+                    pendingCandidatesRef.current.push(msg.candidate)
+                  } else {
+                    await pc.addIceCandidate(msg.candidate)
+                  }
                 } catch (err) {
                   console.warn(' addIceCandidate failed', err)
                 }
@@ -168,7 +198,7 @@ export function VideoCallInterface({ callType, otherUserName, onCallEnd, onClose
         const offer = await pc.createOffer()
         await pc.setLocalDescription(offer)
         signaling?.send({ type: 'webrtc-offer', from: localUserId, to: otherUserId, sdp: offer.sdp })
-        console.info('[pc] offer sent')
+  console.debug('[pc] offer sent')
       } catch (err) {
         console.warn(' createOffer failed', err)
       }
@@ -189,14 +219,14 @@ export function VideoCallInterface({ callType, otherUserName, onCallEnd, onClose
           localVideoRef.current.srcObject = stream
         }
 
-        console.log(" Media stream initialized:", { audio: true, video: callType === "video" })
+  console.debug(" Media stream initialized:", { audio: true, video: callType === "video" })
 
         // initialize peer connection
         await setupPeerConnection(stream)
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : "Failed to access media devices"
         setError(errorMsg)
-        console.log(" Media access error:", errorMsg)
+  console.debug(" Media access error:", errorMsg)
       }
     }
 
@@ -244,7 +274,7 @@ export function VideoCallInterface({ callType, otherUserName, onCallEnd, onClose
         console.warn(' toggleMicrophone sender update failed', err)
       }
       setIsMuted(!isMuted)
-      console.log(" Microphone toggled:", !isMuted ? "off" : "on")
+  console.debug(" Microphone toggled:", !isMuted ? "off" : "on")
     }
   }
 
@@ -268,7 +298,7 @@ export function VideoCallInterface({ callType, otherUserName, onCallEnd, onClose
         }
       }
       setIsVideoOn(!isVideoOn)
-      console.log(" Camera toggled:", !isVideoOn ? "off" : "on")
+  console.debug(" Camera toggled:", !isVideoOn ? "off" : "on")
     }
   }
 
@@ -310,9 +340,9 @@ export function VideoCallInterface({ callType, otherUserName, onCallEnd, onClose
       }
 
       setIsScreenSharing(true)
-      console.log(" Screen sharing started")
+  console.debug(" Screen sharing started")
     } catch (err) {
-      console.log(" Screen share error:", err)
+  console.debug(" Screen share error:", err)
     }
   }
 
@@ -330,7 +360,7 @@ export function VideoCallInterface({ callType, otherUserName, onCallEnd, onClose
     setScreenStream(null)
     setIsScreenSharing(false)
     if (localVideoRef.current && mediaStream) localVideoRef.current.srcObject = mediaStream
-    console.log(" Screen sharing stopped")
+  console.debug(" Screen sharing stopped")
   }
 
   const handleEndCall = () => {
@@ -388,7 +418,7 @@ export function VideoCallInterface({ callType, otherUserName, onCallEnd, onClose
 
     // diagnostic: list devices (labels may appear only when permission granted)
     try {
-      navigator.mediaDevices.enumerateDevices().then((devices) => console.log(' devices after end:', devices))
+  navigator.mediaDevices.enumerateDevices().then((devices) => console.debug(' devices after end:', devices))
     } catch (e) {}
 
     onCallEnd(callDuration)
@@ -408,11 +438,11 @@ export function VideoCallInterface({ callType, otherUserName, onCallEnd, onClose
         {callType === "video" ? (
           <>
             {/* Remote Video */}
-            <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-cover" />
+            <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-contain bg-black" />
 
             {/* Local Video (Picture in Picture) */}
             {!isScreenSharing && (
-              <div className="absolute bottom-4 right-4 w-32 h-32 md:w-40 md:h-40 bg-gray-900 rounded-lg overflow-hidden border-2 border-white">
+              <div className="absolute bottom-6 right-6 w-20 h-20 md:w-36 md:h-36 bg-gray-900 rounded-lg overflow-hidden border-2 border-white">
                 <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
               </div>
             )}
@@ -508,7 +538,7 @@ export function VideoCallInterface({ callType, otherUserName, onCallEnd, onClose
             {callType === "video" && (isVideoOn ? " • 📹 Camera On" : " • 📹 Camera Off")}
             {isScreenSharing && " • 🖥️ Sharing Screen"}
           </p>
-          <p className="text-xs text-gray-400 mt-2">Connection: {pcState} • ICE: {pcIceState}</p>
+          {/* connection state removed from UI to keep display clean */}
         </div>
       </div>
     </div>
