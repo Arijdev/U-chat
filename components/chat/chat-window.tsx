@@ -6,7 +6,25 @@ import { useEffect, useRef, useState, useCallback } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Send, Phone, PhoneOff, Video, Share2, ImageIcon, Smile, MoreVertical, X, Loader2 } from "lucide-react"
+import {
+  Send,
+  Phone,
+  PhoneOff,
+  Video,
+  Share2,
+  ImageIcon,
+  Smile,
+  MoreVertical,
+  X,
+  Loader2,
+  Paperclip,
+  FileText,
+  Mic,
+  Trash2,
+  Search,
+  Check,
+  CheckCheck,
+} from "lucide-react"
 import { encryptMessage, decryptMessage } from "@/lib/encryption"
 import { VideoCallInterface } from "./video-call-interface"
 import { MessageBubble } from "./message-bubble"
@@ -33,16 +51,23 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
   const [hasMoreMessages, setHasMoreMessages] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [otherUser, setOtherUser] = useState<any>(null)
-  const [backgroundColor, setBackgroundColor] = useState<string | null>(null)
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
-  const [photoPreview, setPhotoPreview] = useState<string | null>(null)
-  const [photoFile, setPhotoFile] = useState<File | null>(null)
+  const [showAttachMenu, setShowAttachMenu] = useState(false)
+  const [searchInChat, setSearchInChat] = useState("")
+  const [showSearch, setShowSearch] = useState(false)
+
+  // Voice recording state
+  const [isRecording, setIsRecording] = useState(false)
+  const [recordingSeconds, setRecordingSeconds] = useState(0)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const audioChunksRef = useRef<Blob[]>([])
+  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Calling state
   const [showCallModal, setShowCallModal] = useState(false)
   const [callType, setCallType] = useState<"voice" | "video">("voice")
   const [callStatus, setCallStatus] = useState<"ringing" | "connected" | "ended">("ringing")
   const [callDuration, setCallDuration] = useState(0)
-  const [isMuted, setIsMuted] = useState(false)
-  const [isVideoOn, setIsVideoOn] = useState(true)
   const [incomingCall, setIncomingCall] = useState<{
     callerId: string
     callerName: string
@@ -52,16 +77,18 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
     type: "voice" | "video"
     startTime: number
   } | null>(null)
+  const [isCaller, setIsCaller] = useState(false)
+
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const docInputRef = useRef<HTMLInputElement>(null)
   const unsubscribeRef = useRef<(() => void) | null>(null)
   const callUnsubscribeRef = useRef<(() => void) | null>(null)
   const decryptedMessagesRef = useRef<Map<string, string>>(new Map())
   const callTimerRef = useRef<NodeJS.Timeout | null>(null)
   const signalingRef = useRef<any>(null)
-  const [isCaller, setIsCaller] = useState(false)
 
-  const emojis = ["😀", "😂", "❤️", "👍", "🎉", "🔥", "😍", "🤔", "😢", "😡", "👏", "🙏", "💯", "✨", "🎊"]
+  const emojis = ["😀", "😂", "❤️", "👍", "🎉", "🔥", "😍", "🤔", "😢", "😡", "👏", "🙏", "💯", "✨", "🎊", "🙌", "🤩", "🚀", "👌", "🥳"]
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -91,7 +118,6 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
         decryptedMessagesRef.current.set(cacheKey, decrypted)
         return decrypted
       } catch (err) {
-        console.log(" Decryption error:", err)
         return msg.content
       }
     },
@@ -104,13 +130,13 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
 
       let convData: any = null
       try {
-        const { data: conversation, error: convError } = await supabase
+        const { data: conversation } = await supabase
           .from("conversations")
           .select("*")
           .eq("id", conversationId)
           .single()
 
-        if (!convError && conversation) {
+        if (conversation) {
           convData = conversation
         }
       } catch (e) {}
@@ -146,21 +172,20 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
 
       let remoteMessages: any[] = []
       try {
-        const { data, error: msgError } = await supabase
+        const { data } = await supabase
           .from("messages")
           .select("*")
           .eq("conversation_id", conversationId)
           .order("created_at", { ascending: false })
-          .limit(50)
+          .limit(100)
 
-        if (!msgError && data) {
+        if (data) {
           remoteMessages = (data || []).reverse()
         }
       } catch (e) {}
 
       const localMessages = getLocalMessages(conversationId)
 
-      // Merge remote and local messages
       const msgMap = new Map<string, any>()
       localMessages.forEach((m) => msgMap.set(m.id, m))
       remoteMessages.forEach((m) => msgMap.set(m.id, m))
@@ -170,9 +195,10 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
       )
 
       setMessages(allMessages)
-      setHasMoreMessages(remoteMessages.length === 50)
+      setHasMoreMessages(remoteMessages.length >= 100)
       setLoading(false)
 
+      // Supabase Realtime for instant messaging
       const channelName = `messages:${conversationId}:${Date.now()}`
       const channel = supabase
         .channel(channelName)
@@ -185,11 +211,8 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
             filter: `conversation_id=eq.${conversationId}`,
           },
           (payload) => {
-            console.log(" New message received:", payload.new)
             setMessages((prev) => {
-              if (prev.some((m) => m.id === payload.new.id)) {
-                return prev
-              }
+              if (prev.some((m) => m.id === payload.new.id)) return prev
               return [...prev, payload.new]
             })
           },
@@ -203,13 +226,13 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
             filter: `conversation_id=eq.${conversationId}`,
           },
           (payload) => {
-            console.log(" Message deleted:", payload.old.id)
             setMessages((prev) => prev.filter((m) => m.id !== payload.old.id))
             decryptedMessagesRef.current.delete(payload.old.id)
           },
         )
         .subscribe()
 
+      // Cross-tab realtime synchronization
       const stopLocalSync = listenToSyncEvents((type, payload) => {
         if (type === "message_inserted" && payload?.conversationId === conversationId) {
           setMessages((prev) => {
@@ -237,6 +260,7 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
     }
   }, [conversationId, user.id])
 
+  // Call notifications listener
   useEffect(() => {
     const supabase = createClient()
     const channelName = `calls:${user.id}:${Date.now()}`
@@ -252,7 +276,6 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
           filter: `receiver_id=eq.${user.id}`,
         },
         (payload) => {
-          console.log(" Incoming call detected:", payload.new)
           if (payload.new.status === "ringing") {
             supabase
               .from("profiles")
@@ -260,7 +283,6 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
               .eq("id", payload.new.caller_id)
               .single()
               .then(({ data }) => {
-                console.log(" Setting incoming call from:", data?.display_name)
                 setIncomingCall({
                   callerId: payload.new.caller_id,
                   callerName: data?.display_name || "Unknown",
@@ -279,7 +301,6 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
           filter: `receiver_id=eq.${user.id}`,
         },
         (payload) => {
-          console.log(" Call status updated:", payload.new.status)
           if (payload.new.status === "active") {
             setActiveCall({
               type: payload.new.call_type,
@@ -302,35 +323,32 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
     }
   }, [user.id])
 
-  // WebSocket signaling connection for faster realtime call signaling
+  // WebRTC Signaling connection
   useEffect(() => {
     if (!user?.id) return
 
     const signaling = createSignaling(user.id)
 
     const remove = signaling.addListener((msg: any) => {
-      // incoming signaling messages from the server
       try {
         switch (msg.type) {
-          case 'call':
-            // only handle if targeted to this user
+          case "call":
             if (msg.to === user.id) {
-              setIncomingCall({ callerId: msg.from, callerName: msg.fromName || 'User', callType: msg.callType })
+              setIncomingCall({
+                callerId: msg.from,
+                callerName: msg.fromName || "Unknown",
+                callType: msg.callType || "voice",
+              })
             }
             break
-          case 'call-accepted':
+          case "call-accepted":
             if (msg.to === user.id) {
-              setActiveCall({ type: msg.callType || 'voice', startTime: Date.now() })
+              setActiveCall({ type: msg.callType || "voice", startTime: Date.now() })
               setIncomingCall(null)
             }
             break
-          case 'call-rejected':
-            if (msg.to === user.id) {
-              setIncomingCall(null)
-              setShowCallModal(false)
-            }
-            break
-          case 'call-ended':
+          case "call-rejected":
+          case "call-ended":
             if (msg.to === user.id) {
               setActiveCall(null)
               setIncomingCall(null)
@@ -340,9 +358,7 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
           default:
             break
         }
-      } catch (err) {
-        console.warn(' Signaling handler error', err)
-      }
+      } catch (err) {}
     })
 
     signalingRef.current = signaling
@@ -356,6 +372,7 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
     }
   }, [user.id])
 
+  // SEND TEXT MESSAGE
   const handleSendMessage = async () => {
     if (!newMessage.trim()) return
 
@@ -376,14 +393,13 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
         created_at: new Date().toISOString(),
       }
 
-      // 1. Optimistic & Local persistence
       setMessages((prev) => [...prev, messageObj])
       decryptedMessagesRef.current.set(messageObj.id, messageText)
       saveLocalMessage(conversationId, messageObj)
 
-      // 2. Try remote Supabase insert
+      // Store in Supabase
       try {
-        const { data, error } = await supabase
+        const { data } = await supabase
           .from("messages")
           .insert({
             conversation_id: conversationId,
@@ -394,7 +410,7 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
           })
           .select()
 
-        if (!error && data && data[0]) {
+        if (data && data[0]) {
           setMessages((prev) => prev.map((m) => (m.id === messageObj.id ? data[0] : m)))
           decryptedMessagesRef.current.delete(messageObj.id)
           decryptedMessagesRef.current.set(data[0].id, messageText)
@@ -405,203 +421,233 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
           .from("conversations")
           .update({ updated_at: new Date().toISOString() })
           .eq("id", conversationId)
-      } catch (e) {
-        console.warn("Supabase message insert skipped, stored locally")
-      }
-    } catch (err) {
-      console.error("Error in handleSendMessage:", err)
-    }
+      } catch (e) {}
+    } catch (err) {}
   }
 
-  const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // SEND ATTACHMENT (Photo, Video, Document - NO FILE SIZE LIMIT)
+  const sendAttachment = async (attachment: {
+    media_url: string
+    message_type: "photo" | "video" | "document" | "audio"
+    file_name?: string
+    file_size?: number
+    content: string
+  }) => {
+    setShowAttachMenu(false)
+    const supabase = createClient()
+
+    const msgObj = {
+      id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      conversation_id: conversationId,
+      sender_id: user.id,
+      content: attachment.content,
+      message_type: attachment.message_type,
+      media_url: attachment.media_url,
+      file_name: attachment.file_name,
+      file_size: attachment.file_size,
+      is_encrypted: false,
+      created_at: new Date().toISOString(),
+    }
+
+    setMessages((prev) => [...prev, msgObj])
+    saveLocalMessage(conversationId, msgObj)
+
+    try {
+      const { data } = await supabase
+        .from("messages")
+        .insert({
+          conversation_id: conversationId,
+          sender_id: user.id,
+          content: attachment.content,
+          message_type: attachment.message_type,
+          media_url: attachment.media_url,
+          is_encrypted: false,
+        })
+        .select()
+
+      if (data && data[0]) {
+        const enriched = { ...data[0], file_name: attachment.file_name, file_size: attachment.file_size }
+        setMessages((prev) => prev.map((m) => (m.id === msgObj.id ? enriched : m)))
+        saveLocalMessage(conversationId, enriched)
+      }
+
+      await supabase
+        .from("conversations")
+        .update({ updated_at: new Date().toISOString() })
+        .eq("id", conversationId)
+    } catch (e) {}
+  }
+
+  // Handle Photo or Video Selection (No file size limit)
+  const handlePhotoOrVideoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
 
-    // Guard against huge base64 blobs stored in DB (base64 is ~33% larger than raw)
-    if (file.size > 750_000) {
-      alert("Image too large. Please select an image under 750KB.")
-      e.target.value = ""
-      return
+    const isVideo = file.type.startsWith("video/")
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string
+      sendAttachment({
+        media_url: dataUrl,
+        message_type: isVideo ? "video" : "photo",
+        file_name: file.name,
+        file_size: file.size,
+        content: isVideo ? "Shared a video" : "Shared a photo",
+      })
     }
+    reader.readAsDataURL(file)
+    e.target.value = ""
+  }
+
+  // Handle Document Selection (PDF, Word, TXT, Excel, ZIP, etc. - No file size limit)
+  const handleDocumentSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
 
     const reader = new FileReader()
     reader.onload = (event) => {
-      setPhotoPreview(event.target?.result as string)
-      setPhotoFile(file)
+      const dataUrl = event.target?.result as string
+      sendAttachment({
+        media_url: dataUrl,
+        message_type: "document",
+        file_name: file.name,
+        file_size: file.size,
+        content: file.name,
+      })
     }
     reader.readAsDataURL(file)
+    e.target.value = ""
   }
 
-  const handleSendPhoto = async () => {
-    if (!photoPreview || !photoFile) return
-
-    const supabase = createClient()
-
+  // VOICE NOTE RECORDING (WhatsApp style)
+  const startRecording = async () => {
     try {
-      const encryptedContent = await encryptMessage("Shared a photo", conversationId)
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mediaRecorder = new MediaRecorder(stream)
+      mediaRecorderRef.current = mediaRecorder
+      audioChunksRef.current = []
 
-      const photoMessage = {
-        id: `msg-photo-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        conversation_id: conversationId,
-        sender_id: user.id,
-        content: encryptedContent,
-        message_type: "photo",
-        media_url: photoPreview,
-        is_encrypted: true,
-        created_at: new Date().toISOString(),
-      }
-
-      setMessages((prev) => [...prev, photoMessage])
-      decryptedMessagesRef.current.set(photoMessage.id, "Shared a photo")
-      saveLocalMessage(conversationId, photoMessage)
-
-      setPhotoPreview(null)
-      setPhotoFile(null)
-
-      try {
-        const { data, error } = await supabase
-          .from("messages")
-          .insert({
-            conversation_id: conversationId,
-            sender_id: user.id,
-            content: encryptedContent,
-            message_type: "photo",
-            media_url: photoPreview,
-            is_encrypted: true,
-          })
-          .select()
-
-        if (!error && data && data[0]) {
-          setMessages((prev) => prev.map((m) => (m.id === photoMessage.id ? data[0] : m)))
-          decryptedMessagesRef.current.delete(photoMessage.id)
-          decryptedMessagesRef.current.set(data[0].id, "Shared a photo")
-          saveLocalMessage(conversationId, data[0])
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data)
         }
-
-        await supabase
-          .from("conversations")
-          .update({ updated_at: new Date().toISOString() })
-          .eq("id", conversationId)
-      } catch (e) {
-        console.warn("Supabase photo insert skipped, stored locally")
       }
+
+      mediaRecorder.start()
+      setIsRecording(true)
+      setRecordingSeconds(0)
+
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current)
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingSeconds((prev) => prev + 1)
+      }, 1000)
     } catch (err) {
-      console.error("Error in handleSendPhoto:", err)
+      alert("Microphone permission required to record voice messages.")
     }
   }
 
-  const loadEarlierMessages = async () => {
-    if (loadingMore || messages.length === 0) return
-    setLoadingMore(true)
-    const oldestMessage = messages[0]
-    const supabase = createClient()
-    try {
-      const { data, error } = await supabase
-        .from("messages")
-        .select("*")
-        .eq("conversation_id", conversationId)
-        .lt("created_at", oldestMessage.created_at)
-        .order("created_at", { ascending: false })
-        .limit(50)
+  const stopAndSendRecording = () => {
+    if (!mediaRecorderRef.current) return
+    if (recordingTimerRef.current) clearInterval(recordingTimerRef.current)
 
-      if (error) {
-        console.error("Error loading earlier messages:", error)
-      } else if (data) {
-        const olderSorted = data.reverse()
-        setMessages((prev) => [...olderSorted, ...prev])
-        setHasMoreMessages(data.length === 50)
+    mediaRecorderRef.current.onstop = () => {
+      const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" })
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        const dataUrl = reader.result as string
+        sendAttachment({
+          media_url: dataUrl,
+          message_type: "audio",
+          content: "Voice note",
+          file_size: audioBlob.size,
+        })
       }
-    } catch (err) {
-      console.error("Exception loading earlier messages:", err)
-    } finally {
-      setLoadingMore(false)
+      reader.readAsDataURL(audioBlob)
+
+      // Stop mic tracks
+      mediaRecorderRef.current?.stream.getTracks().forEach((track) => track.stop())
+      mediaRecorderRef.current = null
+      audioChunksRef.current = []
+      setIsRecording(false)
+      setRecordingSeconds(0)
     }
+
+    mediaRecorderRef.current.stop()
+  }
+
+  const cancelRecording = () => {
+    if (recordingTimerRef.current) clearInterval(recordingTimerRef.current)
+    if (mediaRecorderRef.current) {
+      mediaRecorderRef.current.stream.getTracks().forEach((t) => t.stop())
+      mediaRecorderRef.current.stop()
+      mediaRecorderRef.current = null
+    }
+    audioChunksRef.current = []
+    setIsRecording(false)
+    setRecordingSeconds(0)
+  }
+
+  const formatRecordTime = (totalSeconds: number) => {
+    const mins = Math.floor(totalSeconds / 60)
+    const secs = totalSeconds % 60
+    return `${mins}:${secs < 10 ? "0" : ""}${secs}`
   }
 
   const handleDeleteMessage = useCallback(async (messageId: string) => {
-    // 1. Delete locally immediately
     setMessages((prev) => prev.filter((m) => m.id !== messageId))
     decryptedMessagesRef.current.delete(messageId)
     deleteLocalMessage(conversationId, messageId)
 
-    // 2. Silently attempt Supabase delete
     const supabase = createClient()
     try {
       await supabase.from("messages").delete().eq("id", messageId)
     } catch (err) {}
   }, [conversationId])
 
-  const handleBackgroundChange = (color: string | null) => {
-    setBackgroundColor(color)
-  }
-
-  const addEmoji = (emoji: string) => {
-    setNewMessage((prev) => prev + emoji)
-    setShowEmojiPicker(false)
-  }
-
+  // CALL HANDLERS
   const handleCall = async (type: "voice" | "video") => {
-    // Request media permissions first so browser prompts user
     try {
       const constraints = type === "video" ? { audio: true, video: true } : { audio: true, video: false }
       const stream = await navigator.mediaDevices.getUserMedia(constraints)
-      // stop tracks immediately — VideoCallInterface will re-acquire or reuse as needed
       stream.getTracks().forEach((t) => t.stop())
     } catch (err) {
-      console.log(" Media permission denied or error:", err)
       alert("Microphone and camera permission are required to start a call.")
       return
     }
 
     const supabase = createClient()
     try {
-      const { data, error } = await supabase
-        .from("call_history")
-        .insert({
-          caller_id: user.id,
-          receiver_id: otherUser.id,
-          call_type: type,
-          status: "ringing",
-        })
-        .select()
+      await supabase.from("call_history").insert({
+        caller_id: user.id,
+        receiver_id: otherUser.id,
+        call_type: type,
+        status: "ringing",
+      })
 
-      if (!error && data) {
-        setShowCallModal(true)
-        setCallType(type)
-        setCallDuration(0)
-        setIsCaller(true)
+      setShowCallModal(true)
+      setCallType(type)
+      setCallDuration(0)
+      setIsCaller(true)
 
-        if (callTimerRef.current) clearInterval(callTimerRef.current)
-        callTimerRef.current = setInterval(() => {
-          setCallDuration((prev) => prev + 1)
-        }, 1000)
+      if (callTimerRef.current) clearInterval(callTimerRef.current)
+      callTimerRef.current = setInterval(() => {
+        setCallDuration((prev) => prev + 1)
+      }, 1000)
 
-        console.log(" Call initiated:", data[0].id)
-        // send a signaling message to the recipient (if websocket connected)
-        try {
-          signalingRef.current?.send({
-            type: 'call',
-            from: user.id,
-            to: otherUser.id,
-            callType: type,
-            conversationId,
-            fromName: (user as any)?.email || user.id,
-          })
-        } catch (err) {
-          console.warn(' Signaling send failed', err)
-        }
-      }
-    } catch (err) {
-      console.log(" Error initiating call:", err)
-      alert("Error initiating call")
-    }
+      signalingRef.current?.send({
+        type: "call",
+        from: user.id,
+        to: otherUser.id,
+        callType: type,
+        conversationId,
+        fromName: (user as any)?.email || user.id,
+      })
+    } catch (err) {}
   }
 
   const handleCallEnd = async (duration: number) => {
     const supabase = createClient()
     try {
-      // Fetch the most recent active/ringing call record between these two users, then update by ID
-      // (Supabase does not support .order()/.limit() on UPDATE queries)
       const { data: calls } = await supabase
         .from("call_history")
         .select("id")
@@ -620,240 +666,195 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
       }
 
       setActiveCall(null)
-      console.log(" Call ended with duration:", duration)
       setIsCaller(false)
-      try {
-        signalingRef.current?.send({ type: 'call-ended', from: user.id, to: otherUser?.id, conversationId })
-      } catch (err) {
-        console.warn(' Signaling send failed', err)
-      }
-    } catch (err) {
-      console.log(" Error ending call:", err)
-    }
+      signalingRef.current?.send({ type: "call-ended", from: user.id, to: otherUser?.id, conversationId })
+    } catch (err) {}
   }
 
   const handleAcceptCall = async () => {
-    // Ensure we have permission to use mic/camera before accepting
     try {
       const constraints = incomingCall?.callType === "video" ? { audio: true, video: true } : { audio: true, video: false }
       const stream = await navigator.mediaDevices.getUserMedia(constraints)
       stream.getTracks().forEach((t) => t.stop())
     } catch (err) {
-      console.log(" Media permission denied or error on accept:", err)
       alert("Microphone and camera permission are required to accept a call.")
       return
     }
 
     const supabase = createClient()
     try {
-      // Fetch the call record ID first — .order()/.limit() are not valid on UPDATE in Supabase
       const { data: calls } = await supabase
         .from("call_history")
         .select("id")
-        .eq("caller_id", incomingCall?.callerId)
-        .eq("receiver_id", user.id)
+        .or(
+          `and(caller_id.eq.${incomingCall?.callerId},receiver_id.eq.${user.id}),and(caller_id.eq.${user.id},receiver_id.eq.${incomingCall?.callerId})`
+        )
         .eq("status", "ringing")
         .order("created_at", { ascending: false })
         .limit(1)
 
       if (calls && calls[0]) {
-        await supabase
-          .from("call_history")
-          .update({ status: "active" })
-          .eq("id", calls[0].id)
+        await supabase.from("call_history").update({ status: "active" }).eq("id", calls[0].id)
       }
 
-      setActiveCall({
-        type: incomingCall?.callType || "voice",
-        startTime: Date.now(),
-      })
+      setActiveCall({ type: incomingCall?.callType || "voice", startTime: Date.now() })
       setIncomingCall(null)
       setIsCaller(false)
-      try {
-        signalingRef.current?.send({ type: 'call-accepted', from: user.id, to: incomingCall?.callerId, callType: incomingCall?.callType, conversationId })
-      } catch (err) {
-        console.warn(' Signaling send failed', err)
-      }
-    } catch (err) {
-      console.log(" Error accepting call:", err)
-    }
+      signalingRef.current?.send({ type: "call-accepted", from: user.id, to: incomingCall?.callerId, conversationId })
+    } catch (err) {}
   }
 
   const handleRejectCall = async () => {
     const supabase = createClient()
     try {
-      // Fetch the call record ID first — .order()/.limit() are not valid on UPDATE in Supabase
       const { data: calls } = await supabase
         .from("call_history")
         .select("id")
-        .eq("caller_id", incomingCall?.callerId)
-        .eq("receiver_id", user.id)
+        .or(
+          `and(caller_id.eq.${incomingCall?.callerId},receiver_id.eq.${user.id}),and(caller_id.eq.${user.id},receiver_id.eq.${incomingCall?.callerId})`
+        )
         .eq("status", "ringing")
         .order("created_at", { ascending: false })
         .limit(1)
 
       if (calls && calls[0]) {
-        await supabase
-          .from("call_history")
-          .update({ status: "rejected" })
-          .eq("id", calls[0].id)
+        await supabase.from("call_history").update({ status: "rejected" }).eq("id", calls[0].id)
       }
 
       setIncomingCall(null)
       setIsCaller(false)
-      try {
-        signalingRef.current?.send({ type: 'call-rejected', from: user.id, to: incomingCall?.callerId, conversationId })
-      } catch (err) {
-        console.warn(' Signaling send failed', err)
-      }
-    } catch (err) {
-      console.log(" Error rejecting call:", err)
-    }
+      signalingRef.current?.send({ type: "call-rejected", from: user.id, to: incomingCall?.callerId, conversationId })
+    } catch (err) {}
   }
 
-  const handleEndCall = async () => {
-    if (activeCall) {
-      const duration = Math.floor((Date.now() - activeCall.startTime) / 1000)
-      await handleCallEnd(duration)
-    }
+  const addEmoji = (emoji: string) => {
+    setNewMessage((prev) => prev + emoji)
+    setShowEmojiPicker(false)
   }
+
+  // Filter messages when search is active
+  const displayedMessages = searchInChat.trim()
+    ? messages.filter((m) => m.content?.toLowerCase().includes(searchInChat.toLowerCase()))
+    : messages
 
   return (
-    <div className="flex-1 flex flex-col bg-background">
-      {/* Header */}
-      <div className="border-b border-border p-3 md:p-4 flex items-center justify-between bg-card/70 backdrop-blur-xs">
-        <div className="flex items-center gap-2 md:gap-3 min-w-0">
-          <div className="w-8 md:w-10 h-8 md:h-10 bg-linear-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white font-semibold text-sm md:text-base shrink-0 shadow-xs">
-            {otherUser?.display_name?.[0]?.toUpperCase() || "?"}
+    <div className="flex-1 flex flex-col bg-[#efeae2] dark:bg-[#0b141a] relative overflow-hidden">
+      {/* WhatsApp Wallpaper Pattern Overlay */}
+      <div
+        className="absolute inset-0 opacity-[0.06] dark:opacity-[0.03] pointer-events-none"
+        style={{
+          backgroundImage: `radial-gradient(#128C7E 1px, transparent 1px)`,
+          backgroundSize: "20px 20px",
+        }}
+      />
+
+      {/* WhatsApp Header */}
+      <div className="border-b border-border/60 p-3 md:px-4 md:py-2.5 flex items-center justify-between bg-white dark:bg-[#202c33] shadow-xs z-10">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="relative shrink-0">
+            <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-full flex items-center justify-center text-white font-semibold text-base shadow-xs">
+              {otherUser?.display_name?.[0]?.toUpperCase() || otherUser?.email?.[0]?.toUpperCase() || "?"}
+            </div>
+            <span className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 rounded-full border-2 border-white dark:border-[#202c33]" />
           </div>
           <div className="min-w-0">
-            <p className="font-semibold text-foreground text-sm md:text-base truncate">
-              {otherUser?.display_name || "Loading..."}
+            <p className="font-semibold text-foreground text-sm md:text-base truncate leading-tight">
+              {otherUser?.display_name || otherUser?.email?.split("@")[0] || "Chat"}
             </p>
-            <p className="text-xs md:text-sm text-muted-foreground truncate">{otherUser?.email || ""}</p>
+            <p className="text-[11px] text-emerald-600 dark:text-emerald-400 truncate font-medium">online</p>
           </div>
         </div>
-        <div className="flex gap-1 md:gap-2 shrink-0">
+
+        {/* WhatsApp Call & Action Buttons */}
+        <div className="flex items-center gap-1 shrink-0">
           <Button
             size="sm"
             variant="ghost"
-            className="text-muted-foreground hover:text-primary hover:bg-muted h-8 md:h-10 w-8 md:w-10 p-0"
+            className="text-muted-foreground hover:text-foreground hover:bg-muted/50 h-9 w-9 p-0 rounded-full cursor-pointer"
             onClick={() => handleCall("voice")}
             title="Voice Call"
           >
-            <Phone className="w-4 md:w-5 h-4 md:h-5" />
+            <Phone className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
           </Button>
           <Button
             size="sm"
             variant="ghost"
-            className="text-muted-foreground hover:text-primary hover:bg-muted h-8 md:h-10 w-8 md:w-10 p-0"
+            className="text-muted-foreground hover:text-foreground hover:bg-muted/50 h-9 w-9 p-0 rounded-full cursor-pointer"
             onClick={() => handleCall("video")}
             title="Video Call"
           >
-            <Video className="w-4 md:w-5 h-4 md:h-5" />
+            <Video className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
           </Button>
           <Button
             size="sm"
             variant="ghost"
-            className="text-muted-foreground hover:text-primary hover:bg-muted h-8 md:h-10 w-8 md:w-10 p-0"
-            onClick={() => handleCall("video")}
-            title="Screen Share"
+            className="text-muted-foreground hover:text-foreground hover:bg-muted/50 h-9 w-9 p-0 rounded-full cursor-pointer"
+            onClick={() => setShowSearch(!showSearch)}
+            title="Search in chat"
           >
-            <Share2 className="w-4 md:w-5 h-4 md:h-5" />
+            <Search className="w-4 h-4" />
           </Button>
-          <div className="relative group">
-            <Button size="sm" variant="ghost" className="text-muted-foreground hover:text-primary hover:bg-muted h-8 md:h-10 w-8 md:w-10 p-0">
-              <MoreVertical className="w-4 md:w-5 h-4 md:h-5" />
-            </Button>
-            <div className="absolute right-0 mt-2 w-52 bg-card rounded-xl shadow-xl border border-border opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-opacity z-10">
-              <div className="p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-xs font-semibold text-foreground">Chat Background</p>
-                  {backgroundColor && (
-                    <button
-                      onClick={() => handleBackgroundChange(null)}
-                      className="text-[10px] text-primary hover:underline"
-                    >
-                      Reset
-                    </button>
-                  )}
-                </div>
-                <div className="grid grid-cols-4 gap-2">
-                  {["#ffffff", "#f0f9ff", "#f0fdf4", "#fef3c7", "#fecaca", "#e0e7ff", "#1e293b", "#0f172a"].map(
-                    (color) => (
-                      <button
-                        key={color}
-                        onClick={() => handleBackgroundChange(color)}
-                        className={`w-8 h-8 rounded-lg border-2 transition-colors cursor-pointer ${
-                          backgroundColor === color ? "border-blue-600 ring-2 ring-blue-500/30" : "border-border hover:border-blue-500"
-                        }`}
-                        style={{ backgroundColor: color }}
-                        title={color}
-                      />
-                    ),
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
 
-      {/* Caller ringing modal */}
-      {showCallModal && !activeCall && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50">
-          <div className="bg-card border border-border text-card-foreground rounded-2xl p-6 md:p-8 text-center max-w-sm mx-4 shadow-2xl">
-            <div className="text-5xl md:text-6xl mb-4">{callType === "video" ? "📹" : "📞"}</div>
-            <p className="text-lg font-semibold mb-1">Calling...</p>
-            <p className="text-muted-foreground text-sm mb-4">{otherUser?.display_name || "User"}</p>
-            <p className="text-2xl font-bold text-primary mb-6">
-              {Math.floor(callDuration / 60)}:{String(callDuration % 60).padStart(2, "0")}
-            </p>
-            <Button
-              onClick={() => {
-                setShowCallModal(false)
-                if (callTimerRef.current) clearInterval(callTimerRef.current)
-                handleEndCall()
-              }}
-              className="w-full bg-destructive hover:bg-destructive/90 text-destructive-foreground font-medium rounded-xl"
-            >
-              End Call
-            </Button>
-          </div>
+      {/* In-Chat Search Bar */}
+      {showSearch && (
+        <div className="bg-card border-b border-border p-2.5 flex items-center gap-2 z-10 animate-in slide-in-from-top-2">
+          <Search className="w-4 h-4 text-muted-foreground ml-2" />
+          <Input
+            placeholder="Search messages in this chat..."
+            value={searchInChat}
+            onChange={(e) => setSearchInChat(e.target.value)}
+            className="h-8 text-xs border-0 bg-transparent focus-visible:ring-0 shadow-none"
+            autoFocus
+          />
+          {searchInChat && (
+            <button onClick={() => setSearchInChat("")} className="text-xs text-muted-foreground hover:text-foreground mr-2">
+              Clear
+            </button>
+          )}
+          <Button size="sm" variant="ghost" className="h-7 text-xs px-2" onClick={() => setShowSearch(false)}>
+            Close
+          </Button>
         </div>
       )}
 
-      {/* Incoming call banner (non-blocking, like WhatsApp) */}
+      {/* Incoming Call Notification (WhatsApp style) */}
       {incomingCall && (
-        <div className="fixed top-4 right-4 z-50 pointer-events-auto">
-          <div className="w-80 bg-card/95 backdrop-blur-md rounded-2xl shadow-2xl border border-border overflow-hidden text-card-foreground">
-            <div className="flex items-center gap-3 p-3.5">
-              <div className="w-12 h-12 rounded-full bg-linear-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-semibold text-lg shrink-0 shadow-xs">
+        <div className="fixed top-4 right-4 z-50 pointer-events-auto animate-in slide-in-from-top-3">
+          <div className="w-80 bg-card/95 backdrop-blur-md rounded-2xl shadow-2xl border border-emerald-500/40 overflow-hidden text-card-foreground">
+            <div className="flex items-center gap-3 p-4">
+              <div className="w-12 h-12 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-semibold text-lg shrink-0 shadow-sm animate-pulse">
                 {incomingCall.callerName?.[0]?.toUpperCase() || "?"}
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-foreground truncate">{incomingCall.callerName}</p>
-                <p className="text-xs text-muted-foreground truncate">Incoming {incomingCall.callType} call</p>
+                <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium truncate">
+                  Incoming WhatsApp {incomingCall.callType} call...
+                </p>
               </div>
-              <div className="flex items-center gap-2">
-                <Button onClick={handleAcceptCall} className="w-10 h-10 rounded-full bg-green-600 hover:bg-green-700 text-white p-0 flex items-center justify-center">
+              <div className="flex items-center gap-2 shrink-0">
+                <Button
+                  onClick={handleAcceptCall}
+                  className="w-10 h-10 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white p-0 flex items-center justify-center shadow-md cursor-pointer"
+                  title="Answer"
+                >
                   <Phone className="w-4 h-4" />
                 </Button>
-                <Button onClick={handleRejectCall} className="w-10 h-10 rounded-full bg-red-600 hover:bg-red-700 text-white p-0 flex items-center justify-center">
+                <Button
+                  onClick={handleRejectCall}
+                  className="w-10 h-10 rounded-full bg-red-600 hover:bg-red-700 text-white p-0 flex items-center justify-center shadow-md cursor-pointer"
+                  title="Decline"
+                >
                   <PhoneOff className="w-4 h-4" />
                 </Button>
               </div>
-            </div>
-            <div className="px-3.5 pb-2.5">
-              <Button variant="ghost" size="sm" className="w-full text-left text-xs text-muted-foreground hover:text-foreground" onClick={() => setIncomingCall(null)}>
-                Dismiss
-              </Button>
             </div>
           </div>
         </div>
       )}
 
-      {/* VideoCallInterface component for active calls */}
+      {/* Video / Audio Call Interface */}
       {activeCall && (
         <VideoCallInterface
           callType={activeCall.type}
@@ -872,62 +873,26 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
         />
       )}
 
-      {/* Photo Preview Modal */}
-      {photoPreview && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50">
-          <div className="bg-card border border-border text-card-foreground rounded-2xl p-4 md:p-6 max-w-md mx-4 shadow-2xl">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-base font-semibold text-foreground">Preview Photo</h3>
-              <button onClick={() => setPhotoPreview(null)} className="text-muted-foreground hover:text-foreground">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <img src={photoPreview || "/placeholder.svg"} alt="Preview" className="w-full rounded-xl mb-4 max-h-[60vh] object-contain bg-black/20" />
-            <div className="flex gap-2">
-              <Button onClick={handleSendPhoto} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white rounded-xl">
-                Send Photo
-              </Button>
-              <Button onClick={() => setPhotoPreview(null)} variant="outline" className="flex-1 rounded-xl border-border">
-                Cancel
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Messages */}
-      <div
-        className="flex-1 overflow-y-auto p-3 md:p-4 space-y-4 bg-background/50"
-        style={backgroundColor ? { backgroundColor } : undefined}
-      >
-        {hasMoreMessages && (
-          <div className="flex justify-center pt-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={loadingMore}
-              onClick={loadEarlierMessages}
-              className="text-xs bg-muted/60 hover:bg-muted text-muted-foreground border-border rounded-full px-4 h-7 cursor-pointer"
-            >
-              {loadingMore ? (
-                <>
-                  <Loader2 className="w-3 h-3 mr-1 animate-spin" /> Loading...
-                </>
-              ) : (
-                "Load earlier messages"
-              )}
-            </Button>
-          </div>
-        )}
+      {/* Messages Container */}
+      <div className="flex-1 overflow-y-auto p-3 md:p-4 space-y-1 relative z-0">
         {loading ? (
-          <div className="text-center text-sm text-muted-foreground pt-4">Loading messages...</div>
-        ) : messages.length === 0 ? (
-          <div className="text-center text-muted-foreground mt-8 space-y-1">
-            <p className="text-base font-medium text-foreground">No messages yet</p>
-            <p className="text-xs">Start the conversation!</p>
+          <div className="text-center text-sm text-muted-foreground pt-8 flex items-center justify-center gap-2">
+            <Loader2 className="w-4 h-4 animate-spin text-emerald-600" /> Loading messages...
+          </div>
+        ) : displayedMessages.length === 0 ? (
+          <div className="text-center text-muted-foreground mt-12 space-y-2">
+            <div className="w-12 h-12 rounded-full bg-emerald-600/10 text-emerald-600 mx-auto flex items-center justify-center text-xl">
+              💬
+            </div>
+            <p className="text-sm font-semibold text-foreground">
+              {searchInChat ? "No messages matching search" : "No messages yet"}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {searchInChat ? "Try searching for something else" : "Messages are end-to-end encrypted. Send a message to start chatting!"}
+            </p>
           </div>
         ) : (
-          messages.map((msg) => (
+          displayedMessages.map((msg) => (
             <MessageBubble
               key={msg.id}
               msg={msg}
@@ -940,65 +905,155 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input */}
-      <div className="border-t border-border p-2 md:p-4 bg-card/90 backdrop-blur-xs">
-        <div className="flex gap-1 md:gap-2 items-center">
-          <Button
-            size="sm"
-            variant="ghost"
-            className="text-muted-foreground hover:text-primary hover:bg-muted h-8 md:h-10 w-8 md:w-10 p-0 shrink-0 rounded-lg"
-            onClick={() => fileInputRef.current?.click()}
-            title="Send Photo"
-          >
-            <ImageIcon className="w-4 md:w-5 h-4 md:h-5" />
-          </Button>
-          <input ref={fileInputRef} type="file" accept="image/*" onChange={handlePhotoSelect} className="hidden" />
+      {/* Hidden File Inputs (Unlimited Size) */}
+      <input ref={fileInputRef} type="file" accept="image/*,video/*" onChange={handlePhotoOrVideoSelect} className="hidden" />
+      <input ref={docInputRef} type="file" accept="*/*" onChange={handleDocumentSelect} className="hidden" />
 
-          <div className="relative shrink-0">
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-muted-foreground hover:text-primary hover:bg-muted h-8 md:h-10 w-8 md:w-10 p-0 shrink-0 rounded-lg"
-              onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-              title="Emoji"
-            >
-              <Smile className="w-4 md:w-5 h-4 md:h-5" />
-            </Button>
-            {showEmojiPicker && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setShowEmojiPicker(false)} />
-                <div className="absolute bottom-full left-0 mb-2 bg-card border border-border rounded-2xl shadow-2xl p-3 z-50 w-max">
-                  <div className="grid grid-cols-5 gap-2">
-                    {emojis.map((emoji) => (
-                      <button
-                        key={emoji}
-                        onClick={() => addEmoji(emoji)}
-                        className="text-2xl hover:bg-muted p-2 rounded-xl transition-colors cursor-pointer"
-                      >
-                        {emoji}
-                      </button>
-                    ))}
+      {/* WhatsApp Input Bar */}
+      <div className="p-2 md:px-4 md:py-3 bg-white dark:bg-[#202c33] border-t border-border/50 z-10">
+        {isRecording ? (
+          /* Voice Recording Mode */
+          <div className="flex items-center justify-between gap-3 px-3 py-1.5 bg-card rounded-2xl border border-red-500/30">
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-red-500 animate-ping" />
+              <span className="text-xs font-semibold text-red-500">Recording audio...</span>
+              <span className="text-xs font-mono text-muted-foreground">{formatRecordTime(recordingSeconds)}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={cancelRecording}
+                className="text-muted-foreground hover:text-destructive h-8 px-2 text-xs"
+              >
+                <Trash2 className="w-4 h-4 mr-1" /> Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={stopAndSendRecording}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white h-8 px-3 rounded-xl text-xs"
+              >
+                <Send className="w-3.5 h-3.5 mr-1" /> Send Voice
+              </Button>
+            </div>
+          </div>
+        ) : (
+          /* Normal Message Input Mode */
+          <div className="flex gap-1.5 md:gap-2 items-center relative">
+            {/* Attachment Menu Button */}
+            <div className="relative shrink-0">
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-muted-foreground hover:text-emerald-600 hover:bg-muted/50 h-9 w-9 p-0 rounded-full cursor-pointer"
+                onClick={() => setShowAttachMenu(!showAttachMenu)}
+                title="Attach"
+              >
+                <Paperclip className="w-5 h-5" />
+              </Button>
+
+              {/* WhatsApp Attachment Menu Popup */}
+              {showAttachMenu && (
+                <>
+                  <div className="fixed inset-0 z-30" onClick={() => setShowAttachMenu(false)} />
+                  <div className="absolute bottom-full left-0 mb-3 bg-white dark:bg-[#233138] border border-border/60 rounded-2xl shadow-xl p-3 z-40 w-52 space-y-1.5 animate-in slide-in-from-bottom-2">
+                    <button
+                      onClick={() => {
+                        setShowAttachMenu(false)
+                        docInputRef.current?.click()
+                      }}
+                      className="w-full p-2.5 rounded-xl hover:bg-muted/50 flex items-center gap-3 transition-colors cursor-pointer text-left"
+                    >
+                      <div className="w-9 h-9 rounded-full bg-indigo-500/20 text-indigo-500 flex items-center justify-center">
+                        <FileText className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold text-foreground">Document</p>
+                        <p className="text-[10px] text-muted-foreground">PDF, Word, any file</p>
+                      </div>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setShowAttachMenu(false)
+                        fileInputRef.current?.click()
+                      }}
+                      className="w-full p-2.5 rounded-xl hover:bg-muted/50 flex items-center gap-3 transition-colors cursor-pointer text-left"
+                    >
+                      <div className="w-9 h-9 rounded-full bg-purple-500/20 text-purple-500 flex items-center justify-center">
+                        <ImageIcon className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold text-foreground">Photos & Videos</p>
+                        <p className="text-[10px] text-muted-foreground">Unlimited size</p>
+                      </div>
+                    </button>
                   </div>
-                </div>
-              </>
+                </>
+              )}
+            </div>
+
+            {/* Emoji Button */}
+            <div className="relative shrink-0">
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-muted-foreground hover:text-emerald-600 hover:bg-muted/50 h-9 w-9 p-0 rounded-full cursor-pointer"
+                onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                title="Emojis"
+              >
+                <Smile className="w-5 h-5" />
+              </Button>
+
+              {showEmojiPicker && (
+                <>
+                  <div className="fixed inset-0 z-30" onClick={() => setShowEmojiPicker(false)} />
+                  <div className="absolute bottom-full left-0 mb-3 bg-white dark:bg-[#233138] border border-border/60 rounded-2xl shadow-2xl p-3 z-40 w-64 animate-in slide-in-from-bottom-2">
+                    <div className="grid grid-cols-5 gap-1.5 max-h-48 overflow-y-auto">
+                      {emojis.map((emoji) => (
+                        <button
+                          key={emoji}
+                          onClick={() => addEmoji(emoji)}
+                          className="text-xl hover:bg-muted/60 p-2 rounded-xl transition-colors cursor-pointer"
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Message Input Box */}
+            <Input
+              placeholder="Type a message..."
+              value={newMessage}
+              onChange={(e) => setNewMessage(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSendMessage()}
+              className="flex-1 bg-[#f0f2f5] dark:bg-[#2a3942] border-0 text-foreground placeholder:text-muted-foreground text-sm h-10 rounded-xl focus-visible:ring-1 focus-visible:ring-emerald-500/50"
+            />
+
+            {/* Send / Mic Button (WhatsApp style: shows Mic when input is empty, Send when typing) */}
+            {newMessage.trim() ? (
+              <Button
+                onClick={handleSendMessage}
+                className="bg-[#25D366] hover:bg-[#1fb855] text-white h-10 w-10 p-0 shrink-0 rounded-full shadow-md cursor-pointer transition-transform active:scale-95"
+                title="Send"
+              >
+                <Send className="w-4 h-4" />
+              </Button>
+            ) : (
+              <Button
+                onClick={startRecording}
+                className="bg-[#25D366] hover:bg-[#1fb855] text-white h-10 w-10 p-0 shrink-0 rounded-full shadow-md cursor-pointer transition-transform active:scale-95"
+                title="Record voice note"
+              >
+                <Mic className="w-4 h-4" />
+              </Button>
             )}
           </div>
-
-          <Input
-            placeholder="Type an encrypted message..."
-            value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
-            className="flex-1 bg-background border-border text-foreground placeholder:text-muted-foreground text-sm md:text-base h-8 md:h-10 rounded-xl"
-          />
-          <Button
-            onClick={handleSendMessage}
-            disabled={!newMessage.trim()}
-            className="bg-blue-600 hover:bg-blue-700 text-white h-8 md:h-10 px-3 md:px-4 shrink-0 rounded-xl"
-          >
-            <Send className="w-4 md:w-5 h-4 md:h-5" />
-          </Button>
-        </div>
+        )}
       </div>
     </div>
   )
