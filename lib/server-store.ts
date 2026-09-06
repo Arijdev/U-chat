@@ -18,6 +18,11 @@ export interface ServerConversation {
   updated_at: string
   participant_1?: ServerUser
   participant_2?: ServerUser
+  is_group?: boolean
+  group_name?: string
+  group_avatar?: string
+  group_members?: string[]
+  is_archived?: boolean
 }
 
 export interface ServerMessage {
@@ -30,6 +35,13 @@ export interface ServerMessage {
   file_name?: string
   file_size?: number
   is_encrypted?: boolean
+  reply_to?: {
+    id: string
+    sender_name: string
+    content: string
+  }
+  reactions?: Record<string, string[]> // emoji -> [userId1, userId2]
+  is_starred?: boolean
   created_at: string
 }
 
@@ -67,6 +79,34 @@ export interface ServerStory {
   user?: ServerUser
 }
 
+export interface ServerChannel {
+  id: string
+  name: string
+  handle: string
+  description: string
+  avatar_url: string
+  verified: boolean
+  followers_count: number
+  followers: string[]
+  updates: {
+    id: string
+    text: string
+    time: string
+    media_url?: string
+    reactions?: Record<string, number>
+  }[]
+}
+
+export interface ServerCommunity {
+  id: string
+  name: string
+  description: string
+  avatar_url: string
+  members_count: number
+  announcement_group: string
+  groups: { id: string; name: string; member_count: number }[]
+}
+
 interface StoreData {
   users: ServerUser[]
   conversations: ServerConversation[]
@@ -74,6 +114,8 @@ interface StoreData {
   calls: ServerCall[]
   signaling: ServerSignaling[]
   stories: ServerStory[]
+  channels?: ServerChannel[]
+  communities?: ServerCommunity[]
 }
 
 const DATA_DIR = path.join(process.cwd(), ".uchat_data")
@@ -276,6 +318,9 @@ export function addServerMessage(msg: Omit<ServerMessage, "id" | "created_at"> &
     file_name: msg.file_name,
     file_size: msg.file_size,
     is_encrypted: msg.is_encrypted || false,
+    reply_to: msg.reply_to,
+    reactions: msg.reactions || {},
+    is_starred: msg.is_starred || false,
     created_at: msg.created_at || new Date().toISOString(),
   }
 
@@ -285,13 +330,119 @@ export function addServerMessage(msg: Omit<ServerMessage, "id" | "created_at"> &
   const conv = store.conversations.find((c) => c.id === msg.conversation_id)
   if (conv) {
     conv.updated_at = newMsg.created_at
-    // Notify both participants
-    notifyUser(conv.participant_1_id, { type: "message_inserted", payload: newMsg })
-    notifyUser(conv.participant_2_id, { type: "message_inserted", payload: newMsg })
+    // Notify participants
+    if (conv.is_group && conv.group_members) {
+      conv.group_members.forEach((memberId) => {
+        notifyUser(memberId, { type: "message_inserted", payload: newMsg })
+      })
+    } else {
+      notifyUser(conv.participant_1_id, { type: "message_inserted", payload: newMsg })
+      notifyUser(conv.participant_2_id, { type: "message_inserted", payload: newMsg })
+    }
   }
 
   saveStore()
   return newMsg
+}
+
+export function toggleServerMessageReaction(messageId: string, emoji: string, userId: string): ServerMessage | null {
+  const msg = store.messages.find((m) => m.id === messageId)
+  if (!msg) return null
+
+  if (!msg.reactions) msg.reactions = {}
+  if (!msg.reactions[emoji]) msg.reactions[emoji] = []
+
+  const userIdx = msg.reactions[emoji].indexOf(userId)
+  if (userIdx > -1) {
+    msg.reactions[emoji].splice(userIdx, 1)
+    if (msg.reactions[emoji].length === 0) {
+      delete msg.reactions[emoji]
+    }
+  } else {
+    // Remove user from any other emoji in this message
+    Object.keys(msg.reactions).forEach((k) => {
+      msg.reactions![k] = msg.reactions![k].filter((id) => id !== userId)
+      if (msg.reactions![k].length === 0) delete msg.reactions![k]
+    })
+    msg.reactions[emoji].push(userId)
+  }
+
+  saveStore()
+
+  const conv = store.conversations.find((c) => c.id === msg.conversation_id)
+  if (conv) {
+    notifyUser(conv.participant_1_id, { type: "message_updated", payload: msg })
+    notifyUser(conv.participant_2_id, { type: "message_updated", payload: msg })
+  }
+
+  return msg
+}
+
+export function toggleServerMessageStar(messageId: string, isStarred: boolean): ServerMessage | null {
+  const msg = store.messages.find((m) => m.id === messageId)
+  if (!msg) return null
+
+  msg.is_starred = isStarred
+  saveStore()
+
+  const conv = store.conversations.find((c) => c.id === msg.conversation_id)
+  if (conv) {
+    notifyUser(conv.participant_1_id, { type: "message_updated", payload: msg })
+    notifyUser(conv.participant_2_id, { type: "message_updated", payload: msg })
+  }
+
+  return msg
+}
+
+export function getStarredMessages(userId: string): ServerMessage[] {
+  // Get all messages from conversations involving this user that have is_starred: true
+  const userConvIds = new Set(
+    store.conversations
+      .filter((c) => c.participant_1_id === userId || c.participant_2_id === userId || c.group_members?.includes(userId))
+      .map((c) => c.id)
+  )
+
+  return store.messages
+    .filter((m) => userConvIds.has(m.conversation_id) && m.is_starred)
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+}
+
+export function createGroupConversation(data: {
+  creator_id: string
+  name: string
+  avatar_url?: string
+  member_ids: string[]
+}): ServerConversation {
+  const allMembers = Array.from(new Set([data.creator_id, ...data.member_ids]))
+  const groupConv: ServerConversation = {
+    id: `group_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    participant_1_id: data.creator_id,
+    participant_2_id: allMembers[1] || data.creator_id,
+    is_group: true,
+    group_name: data.name,
+    group_avatar: data.avatar_url || "",
+    group_members: allMembers,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  }
+
+  store.conversations.unshift(groupConv)
+  saveStore()
+
+  allMembers.forEach((memberId) => {
+    notifyUser(memberId, { type: "conversation_created", payload: groupConv })
+  })
+
+  return groupConv
+}
+
+export function toggleArchiveConversation(conversationId: string, isArchived: boolean): boolean {
+  const conv = store.conversations.find((c) => c.id === conversationId)
+  if (!conv) return false
+
+  conv.is_archived = isArchived
+  saveStore()
+  return true
 }
 
 export function deleteServerMessage(messageId: string): boolean {
@@ -444,6 +595,133 @@ export function deleteServerStory(storyId: string, userId: string): boolean {
   }
 
   return false
+}
+
+// CHANNELS & COMMUNITIES
+const DEFAULT_CHANNELS: ServerChannel[] = [
+  {
+    id: "chan_whatsapp",
+    name: "WhatsApp",
+    handle: "whatsapp",
+    description: "The official WhatsApp channel. News, updates and product features.",
+    avatar_url: "https://images.unsplash.com/photo-1614680376593-902f749f7ffc?w=150&auto=format&fit=crop&q=80",
+    verified: true,
+    followers_count: 148200000,
+    followers: [],
+    updates: [
+      {
+        id: "up_1",
+        text: "Introducing WhatsApp Channels! A simple, reliable, and private way to receive important updates from people and organizations right inside WhatsApp.",
+        time: "Today, 10:30 AM",
+        reactions: { "💚": 124000, "🔥": 45000, "👏": 18000 },
+      },
+      {
+        id: "up_2",
+        text: "Now with end-to-end encrypted voice & video calls, disappearing messages, and rich photo editing across all your devices.",
+        time: "Yesterday",
+        reactions: { "❤️": 89000, "🎉": 34000 },
+      },
+    ],
+  },
+  {
+    id: "chan_uefa",
+    name: "UEFA Champions League",
+    handle: "uefa_cl",
+    description: "The home of the UEFA Champions League. Match updates, scores and behind the scenes.",
+    avatar_url: "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=150&auto=format&fit=crop&q=80",
+    verified: true,
+    followers_count: 52400000,
+    followers: [],
+    updates: [
+      {
+        id: "up_uefa_1",
+        text: "Matchday highlights and dramatic late winners! Watch all the goals and moments from this week's fixtures.",
+        time: "2 hours ago",
+        reactions: { "⚽": 67000, "🔥": 29000 },
+      },
+    ],
+  },
+  {
+    id: "chan_tech",
+    name: "Tech Radar & AI",
+    handle: "techradar",
+    description: "Daily insights into artificial intelligence, web development, and breaking tech news.",
+    avatar_url: "https://images.unsplash.com/photo-1518770660439-4636190af475?w=150&auto=format&fit=crop&q=80",
+    verified: true,
+    followers_count: 18900000,
+    followers: [],
+    updates: [
+      {
+        id: "up_tech_1",
+        text: "Next.js 16 and real-time WebRTC are transforming browser communications with zero latency. Here is what you need to know.",
+        time: "5 hours ago",
+        reactions: { "🚀": 42000, "💡": 15000 },
+      },
+    ],
+  },
+]
+
+const DEFAULT_COMMUNITIES: ServerCommunity[] = [
+  {
+    id: "comm_developers",
+    name: "Global Software Engineers",
+    description: "A community uniting 40,000+ engineers building modern real-time web and mobile applications.",
+    avatar_url: "https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=150&auto=format&fit=crop&q=80",
+    members_count: 42350,
+    announcement_group: "Announcements & Keynotes",
+    groups: [
+      { id: "grp_react", name: "React & Next.js Ecosystem", member_count: 14200 },
+      { id: "grp_webrtc", name: "WebRTC & Video Streaming", member_count: 8500 },
+      { id: "grp_devops", name: "Cloud, CI/CD & Deployments", member_count: 6100 },
+    ],
+  },
+  {
+    id: "comm_neighborhood",
+    name: "Greenwood Residency",
+    description: "Official residential community forum for announcements, maintenance, and neighborhood events.",
+    avatar_url: "https://images.unsplash.com/photo-1577495508048-b635879837f1?w=150&auto=format&fit=crop&q=80",
+    members_count: 840,
+    announcement_group: "Community Notice Board",
+    groups: [
+      { id: "grp_events", name: "Clubhouse & Social Events", member_count: 620 },
+      { id: "grp_help", name: "Maintenance & Helpdesk", member_count: 510 },
+    ],
+  },
+]
+
+export function getServerChannels(userId?: string): ServerChannel[] {
+  if (!store.channels || store.channels.length === 0) {
+    store.channels = DEFAULT_CHANNELS
+    saveStore()
+  }
+  return store.channels
+}
+
+export function toggleFollowChannel(channelId: string, userId: string): ServerChannel | null {
+  const channels = getServerChannels()
+  const chan = channels.find((c) => c.id === channelId)
+  if (!chan) return null
+
+  if (!chan.followers) chan.followers = []
+  const idx = chan.followers.indexOf(userId)
+  if (idx > -1) {
+    chan.followers.splice(idx, 1)
+    chan.followers_count = Math.max(0, chan.followers_count - 1)
+  } else {
+    chan.followers.push(userId)
+    chan.followers_count += 1
+  }
+
+  saveStore()
+  return chan
+}
+
+export function getServerCommunities(): ServerCommunity[] {
+  if (!store.communities || store.communities.length === 0) {
+    store.communities = DEFAULT_COMMUNITIES
+    saveStore()
+  }
+  return store.communities
 }
 
 // REALTIME SSE NOTIFIER

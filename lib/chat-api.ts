@@ -28,6 +28,13 @@ export interface ChatMessage {
   file_name?: string
   file_size?: number
   is_encrypted?: boolean
+  reply_to?: {
+    id: string
+    sender_name: string
+    content: string
+  }
+  reactions?: Record<string, string[]>
+  is_starred?: boolean
   created_at: string
 }
 

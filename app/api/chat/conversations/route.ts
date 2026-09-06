@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
-import { getServerConversations, createServerConversation } from "@/lib/server-store"
+import {
+  getServerConversations,
+  createServerConversation,
+  createGroupConversation,
+  toggleArchiveConversation,
+} from "@/lib/server-store"
 
 export const dynamic = "force-dynamic"
 
@@ -18,7 +23,22 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { participant1Id, participant2Id } = body
+    const { action, is_group, creator_id, name, avatar_url, member_ids, participant1Id, participant2Id, conversationId, isArchived } = body
+
+    if (action === "archive" && conversationId) {
+      const ok = toggleArchiveConversation(conversationId, Boolean(isArchived))
+      return NextResponse.json({ ok })
+    }
+
+    if (is_group && creator_id && name && Array.isArray(member_ids)) {
+      const groupConv = createGroupConversation({
+        creator_id,
+        name,
+        avatar_url,
+        member_ids,
+      })
+      return NextResponse.json(groupConv)
+    }
 
     if (!participant1Id || !participant2Id) {
       return NextResponse.json({ error: "Missing participants" }, { status: 400 })

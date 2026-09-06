@@ -5,7 +5,21 @@ import { useState, useEffect } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { LogOut, Plus, Search, Zap, Clock, MessageSquare, UserCheck, Loader2, Edit2 } from "lucide-react"
+import {
+  LogOut,
+  Plus,
+  Search,
+  Zap,
+  Clock,
+  MessageSquare,
+  UserCheck,
+  Loader2,
+  Edit2,
+  Users,
+  Archive,
+  Check,
+  X,
+} from "lucide-react"
 import { useRouter } from "next/navigation"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { ProfileDrawer } from "./profile-drawer"
@@ -33,6 +47,8 @@ interface ChatSidebarProps {
   className?: string
 }
 
+type FilterTab = "all" | "unread" | "favorites" | "groups"
+
 export default function ChatSidebar({
   user,
   conversations,
@@ -44,13 +60,18 @@ export default function ChatSidebar({
   className,
 }: ChatSidebarProps) {
   const [searchQuery, setSearchQuery] = useState("")
+  const [filterTab, setFilterTab] = useState<FilterTab>("all")
   const [showNewChat, setShowNewChat] = useState(false)
+  const [showNewGroupModal, setShowNewGroupModal] = useState(false)
+  const [groupName, setGroupName] = useState("")
+  const [selectedGroupMembers, setSelectedGroupMembers] = useState<string[]>([])
   const [newChatEmail, setNewChatEmail] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [isSearching, setIsSearching] = useState(false)
   const [registeredUsers, setRegisteredUsers] = useState<ChatUser[]>([])
   const [loadingRegisteredUsers, setLoadingRegisteredUsers] = useState(false)
   const [showProfileModal, setShowProfileModal] = useState(false)
+  const [showArchivedOnly, setShowArchivedOnly] = useState(false)
   const [currentDisplayName, setCurrentDisplayName] = useState(
     user.user_metadata?.display_name || user.email?.split("@")[0] || "User"
   )
@@ -68,12 +89,10 @@ export default function ChatSidebar({
     router.push("/")
   }
 
-  // When new chat panel opens, fetch available registered users to display as quick contacts
+  // Load available users for contacts & group creation
   useEffect(() => {
-    if (!showNewChat) return
     const fetchRegisteredUsers = async () => {
       setLoadingRegisteredUsers(true)
-
       try {
         const serverUsers = await apiGetUsers(user.id)
         const localProfiles = getKnownProfiles()
@@ -99,7 +118,7 @@ export default function ChatSidebar({
     }
 
     fetchRegisteredUsers()
-  }, [showNewChat, user.id, user.email])
+  }, [user.id, user.email])
 
   const startChatWithUser = async (targetUser: { id: string; email: string; display_name?: string }) => {
     if (targetUser.id === user.id || targetUser.email?.toLowerCase() === user.email?.toLowerCase()) {
@@ -111,12 +130,12 @@ export default function ChatSidebar({
     setIsSearching(true)
 
     try {
-      // 1. Check if conversation already exists in current list
       const existingInState = conversations.find(
         (c) =>
-          (c.participant_1_id === user.id && c.participant_2_id === targetUser.id) ||
-          (c.participant_1_id === targetUser.id && c.participant_2_id === user.id) ||
-          (c.participant_1?.email?.toLowerCase() === targetUser.email.toLowerCase() ||
+          !c.is_group &&
+          ((c.participant_1_id === user.id && c.participant_2_id === targetUser.id) ||
+            (c.participant_1_id === targetUser.id && c.participant_2_id === user.id) ||
+            c.participant_1?.email?.toLowerCase() === targetUser.email.toLowerCase() ||
             c.participant_2?.email?.toLowerCase() === targetUser.email.toLowerCase())
       )
 
@@ -128,7 +147,6 @@ export default function ChatSidebar({
         return
       }
 
-      // 2. Create conversation via server API
       const newConv = await apiCreateConversation(user.id, targetUser.id)
       if (newConv && newConv.id) {
         onSelectConversation(newConv.id)
@@ -138,7 +156,6 @@ export default function ChatSidebar({
         return
       }
 
-      // 3. Fallback locally
       const localConv = saveLocalConversation({
         participant_1_id: user.id,
         participant_2_id: targetUser.id,
@@ -171,7 +188,6 @@ export default function ChatSidebar({
     try {
       let targetUser: any = null
 
-      // 1. Check loaded registered users
       const match = registeredUsers.find(
         (u) =>
           u.email.toLowerCase() === query.toLowerCase() ||
@@ -183,7 +199,6 @@ export default function ChatSidebar({
         targetUser = match
       }
 
-      // 2. Check local dataset
       if (!targetUser) {
         const localMatches = searchProfiles(query, user.id)
         if (localMatches.length > 0) {
@@ -191,7 +206,6 @@ export default function ChatSidebar({
         }
       }
 
-      // 3. If user typed an email, register it and start chat
       if (!targetUser && query.includes("@")) {
         targetUser = await apiRegisterUser({
           id: `user-${query.replace(/[^a-zA-Z0-9]/g, "-")}`,
@@ -215,230 +229,356 @@ export default function ChatSidebar({
     }
   }
 
-  const filteredConversations = conversations.filter((conv) => {
-    const otherParticipant = conv.participant_1_id === user.id ? conv.participant_2 : conv.participant_1
-    const q = searchQuery.toLowerCase()
-    return (
-      otherParticipant?.email?.toLowerCase().includes(q) ||
-      otherParticipant?.display_name?.toLowerCase().includes(q)
+  const handleCreateGroup = async () => {
+    if (!groupName.trim()) return
+    try {
+      const res = await fetch("/api/chat/conversations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          is_group: true,
+          creator_id: user.id,
+          name: groupName.trim(),
+          member_ids: selectedGroupMembers,
+        }),
+      })
+
+      if (res.ok) {
+        const groupConv = await res.json()
+        onSelectConversation(groupConv.id)
+        setShowNewGroupModal(false)
+        setGroupName("")
+        setSelectedGroupMembers([])
+      }
+    } catch (e) {
+      console.error("Failed to create group:", e)
+    }
+  }
+
+  const toggleGroupMember = (userId: string) => {
+    setSelectedGroupMembers((prev) =>
+      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]
     )
+  }
+
+  // Filter conversations
+  const filteredConversations = conversations.filter((conv) => {
+    if (showArchivedOnly) {
+      return conv.is_archived
+    }
+    if (conv.is_archived) return false
+
+    // Tabs filter
+    if (filterTab === "groups" && !conv.is_group) return false
+    if (filterTab === "unread" && !conv.unread_count) return false
+
+    const otherParticipant = conv.participant_1_id === user.id ? conv.participant_2 : conv.participant_1
+    const title = conv.is_group ? conv.group_name : otherParticipant?.display_name || otherParticipant?.email
+    const q = searchQuery.toLowerCase()
+
+    if (!q) return true
+    return title?.toLowerCase().includes(q) || otherParticipant?.email?.toLowerCase().includes(q)
   })
 
-  // Filter registered users in the new chat panel based on user input
-  const filteredRegisteredUsers = registeredUsers.filter((u) => {
-    if (!newChatEmail.trim()) return true
-    const q = newChatEmail.toLowerCase().trim()
-    return u.email?.toLowerCase().includes(q) || u.display_name?.toLowerCase().includes(q)
-  })
+  const archivedCount = conversations.filter((c) => c.is_archived).length
 
   return (
-    <div className={`w-full md:w-80 bg-card border-r border-border flex flex-col shrink-0 h-full overflow-hidden ${className || ""}`}>
+    <div
+      className={`w-full md:w-88 bg-card border-r border-border flex flex-col shrink-0 h-full overflow-hidden select-none ${
+        className || ""
+      }`}
+    >
       {/* Header */}
-      <div className="p-4 border-b border-border space-y-3">
+      <div className="p-3.5 border-b border-border space-y-3 bg-[#f0f2f5] dark:bg-[#111b21]">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-emerald-600 flex items-center justify-center text-white shadow-sm">
-              <MessageSquare className="w-4 h-4" />
-            </div>
-            <h1 className="text-xl font-bold bg-gradient-to-r from-emerald-500 to-teal-600 bg-clip-text text-transparent">
-              WhatsApp
-            </h1>
-          </div>
+          <h1 className="text-xl font-bold text-foreground">Chats</h1>
           <div className="flex items-center gap-1">
-            <ThemeToggle />
             <Button
               size="sm"
               variant="ghost"
-              onClick={handleLogout}
-              className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 h-9 w-9 p-0 cursor-pointer"
-              title="Log out"
+              onClick={() => setShowNewGroupModal(true)}
+              className="text-muted-foreground hover:text-foreground h-8 w-8 p-0 rounded-full cursor-pointer"
+              title="New Group"
             >
-              <LogOut className="w-4 h-4" />
+              <Users className="w-4.5 h-4.5" />
             </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setShowNewChat(!showNewChat)}
+              className="text-muted-foreground hover:text-foreground h-8 w-8 p-0 rounded-full cursor-pointer"
+              title="New Chat"
+            >
+              <Plus className="w-5 h-5" />
+            </Button>
+            <ThemeToggle />
           </div>
         </div>
 
-        {/* Current User Profile Card - Click to Update Name, Photo & Status */}
-        <button
-          onClick={() => setShowProfileModal(true)}
-          className="flex items-center gap-2.5 p-2 rounded-xl bg-muted/40 hover:bg-muted/70 transition-colors w-full text-left cursor-pointer border border-border/50 group"
-          title="Click to view & update your WhatsApp profile"
-        >
-          <div className="w-9 h-9 rounded-full overflow-hidden bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-semibold text-sm shrink-0 shadow-xs">
-            {currentAvatarUrl ? (
-              <img src={currentAvatarUrl} alt={currentDisplayName} className="w-full h-full object-cover" />
-            ) : (
-              currentDisplayName?.[0]?.toUpperCase() || user.email?.[0]?.toUpperCase() || "?"
-            )}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-xs font-semibold text-foreground truncate group-hover:text-emerald-600 transition-colors">
-              {currentDisplayName}
-            </p>
-            <p className="text-[10px] text-muted-foreground truncate">{currentStatus}</p>
-          </div>
-          <div className="flex items-center gap-1 text-[10px] text-emerald-600 font-medium px-2 py-0.5 rounded-md bg-emerald-500/10">
-            <Edit2 className="w-3 h-3" /> Profile
-          </div>
-        </button>
+        {/* Search Bar */}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            placeholder="Search or start new chat"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-9 h-9 border-0 bg-background text-xs rounded-xl shadow-none focus-visible:ring-1 focus-visible:ring-emerald-500"
+          />
+        </div>
 
-        <div className="flex gap-2">
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              placeholder="Search chats..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 border-border bg-background text-sm rounded-xl"
-            />
-          </div>
-          <Button
-            size="sm"
-            onClick={() => setShowNewChat(!showNewChat)}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white h-9 w-9 p-0 shrink-0 rounded-xl cursor-pointer"
-            title="Start new chat"
-          >
-            <Plus className="w-4 h-4" />
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={onShowStories}
-            className="border-border bg-background hover:bg-accent text-muted-foreground hover:text-foreground h-9 w-9 p-0 shrink-0 cursor-pointer"
-            title="Status / Stories"
-          >
-            <Zap className="w-4 h-4 text-amber-500" />
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={onShowCallHistory}
-            className="border-border bg-background hover:bg-accent text-muted-foreground hover:text-foreground h-9 w-9 p-0 shrink-0 cursor-pointer"
-            title="Call history"
-          >
-            <Clock className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-          </Button>
+        {/* WhatsApp Filter Pill Tabs */}
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-0.5">
+          {(
+            [
+              { id: "all", label: "All" },
+              { id: "unread", label: "Unread" },
+              { id: "favorites", label: "Favorites" },
+              { id: "groups", label: "Groups" },
+            ] as const
+          ).map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => {
+                setShowArchivedOnly(false)
+                setFilterTab(tab.id)
+              }}
+              className={`px-3 py-1 rounded-full text-xs font-semibold cursor-pointer transition-colors shrink-0 ${
+                !showArchivedOnly && filterTab === tab.id
+                  ? "bg-emerald-600 text-white shadow-xs"
+                  : "bg-muted/80 text-muted-foreground hover:bg-muted hover:text-foreground"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* New Chat Panel */}
+      {/* New Chat Slide-down Panel */}
       {showNewChat && (
-        <div className="p-4 border-b border-border bg-muted/30 space-y-3 animate-in slide-in-from-top-2">
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-foreground">Start New Chat</span>
-              <button
-                onClick={() => setShowNewChat(false)}
-                className="text-[11px] text-muted-foreground hover:text-foreground cursor-pointer"
-              >
-                Close
-              </button>
-            </div>
-            <Input
-              placeholder="Enter email or username..."
-              value={newChatEmail}
-              onChange={(e) => setNewChatEmail(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleStartNewChat()}
-              className="border-border bg-background text-sm rounded-xl"
-              autoFocus
-            />
-            {error && (
-              <p className="text-xs text-destructive bg-destructive/10 border border-destructive/20 p-2 rounded-lg font-medium leading-relaxed">
-                {error}
-              </p>
-            )}
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                onClick={handleStartNewChat}
-                disabled={isSearching || !newChatEmail.trim()}
-                className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs rounded-xl h-8 cursor-pointer"
-              >
-                {isSearching ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : null}
-                Search & Start Chat
-              </Button>
-            </div>
+        <div className="p-3.5 border-b border-border bg-muted/40 space-y-3 animate-in slide-in-from-top-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-foreground">New Chat</span>
+            <button
+              onClick={() => setShowNewChat(false)}
+              className="text-xs text-muted-foreground hover:text-foreground cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
+          <Input
+            placeholder="Search contact email or username..."
+            value={newChatEmail}
+            onChange={(e) => setNewChatEmail(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleStartNewChat()}
+            className="h-8 text-xs bg-background rounded-lg border-border"
+            autoFocus
+          />
+          {error && (
+            <p className="text-xs text-destructive bg-destructive/10 border border-destructive/20 p-2 rounded-lg font-medium">
+              {error}
+            </p>
+          )}
 
           {/* Quick-Pick Registered Users */}
           {registeredUsers.length > 0 && (
-            <div className="pt-2 border-t border-border/50">
-              <p className="text-[11px] font-medium text-muted-foreground mb-1.5 flex items-center gap-1">
-                <UserCheck className="w-3.5 h-3.5 text-emerald-600" /> Contacts:
+            <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
+              <p className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1 mb-1">
+                <UserCheck className="w-3.5 h-3.5 text-emerald-600" /> Contacts on WhatsApp:
               </p>
-              <div className="max-h-40 overflow-y-auto space-y-1 pr-1">
-                {loadingRegisteredUsers ? (
-                  <p className="text-xs text-muted-foreground py-2 text-center">Loading users...</p>
-                ) : filteredRegisteredUsers.length === 0 ? (
-                  <p className="text-xs text-muted-foreground py-1">No matching users</p>
-                ) : (
-                  filteredRegisteredUsers.map((u) => (
-                    <button
-                      key={u.id}
-                      onClick={() => startChatWithUser(u)}
-                      className="w-full p-2 text-left rounded-lg hover:bg-accent flex items-center gap-2 transition-colors cursor-pointer border border-transparent hover:border-border"
-                    >
-                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white text-xs font-semibold shrink-0">
-                        {u.display_name?.[0]?.toUpperCase() || u.email?.[0]?.toUpperCase() || "?"}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs font-semibold text-foreground truncate">{u.display_name || u.email?.split("@")[0]}</p>
-                        <p className="text-[10px] text-muted-foreground truncate">{u.email}</p>
-                      </div>
-                    </button>
-                  ))
-                )}
-              </div>
+              {registeredUsers.map((u) => (
+                <button
+                  key={u.id}
+                  onClick={() => startChatWithUser(u)}
+                  className="w-full p-2 text-left rounded-lg hover:bg-card flex items-center gap-2.5 transition-colors cursor-pointer border border-transparent hover:border-border"
+                >
+                  <div className="w-7 h-7 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white text-xs font-bold shrink-0">
+                    {u.display_name?.[0]?.toUpperCase() || u.email?.[0]?.toUpperCase() || "?"}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-semibold text-foreground truncate">{u.display_name}</p>
+                    <p className="text-[10px] text-muted-foreground truncate">{u.email}</p>
+                  </div>
+                </button>
+              ))}
             </div>
           )}
         </div>
       )}
 
+      {/* Archived Chats Row */}
+      {archivedCount > 0 && (
+        <button
+          onClick={() => setShowArchivedOnly(!showArchivedOnly)}
+          className={`w-full p-3 border-b border-border/50 flex items-center justify-between transition-colors cursor-pointer ${
+            showArchivedOnly ? "bg-emerald-500/10 text-emerald-600" : "hover:bg-muted/40 text-foreground"
+          }`}
+        >
+          <div className="flex items-center gap-3">
+            <Archive className="w-4.5 h-4.5 text-emerald-600" />
+            <span className="text-xs font-semibold">Archived</span>
+          </div>
+          <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/15 px-2 py-0.5 rounded-full">
+            {archivedCount}
+          </span>
+        </button>
+      )}
+
       {/* Conversations List */}
       <div className="flex-1 overflow-y-auto divide-y divide-border/30">
         {loading ? (
-          <div className="p-6 text-center text-sm text-muted-foreground">Loading conversations...</div>
+          <div className="p-8 text-center text-sm text-muted-foreground flex items-center justify-center gap-2">
+            <Loader2 className="w-4 h-4 animate-spin text-emerald-600" /> Loading chats...
+          </div>
         ) : filteredConversations.length === 0 ? (
           <div className="p-8 text-center text-sm text-muted-foreground space-y-2">
-            <p className="font-medium text-foreground">No conversations yet</p>
-            <p className="text-xs text-muted-foreground">Click the + button above to start a chat with someone!</p>
+            <p className="font-semibold text-foreground">No chats found</p>
+            <p className="text-xs text-muted-foreground">Start a chat or create a group with your contacts!</p>
           </div>
         ) : (
           filteredConversations.map((conv) => {
-            const otherParticipant = conv.participant_1_id === user.id ? conv.participant_2 : conv.participant_1
             const isSelected = selectedConversation === conv.id
+            const isGroup = Boolean(conv.is_group)
+            const otherParticipant = conv.participant_1_id === user.id ? conv.participant_2 : conv.participant_1
+            const title = isGroup
+              ? conv.group_name
+              : otherParticipant?.display_name || otherParticipant?.email?.split("@")[0] || "Contact"
+            const subtitle = isGroup ? `${conv.group_members?.length || 2} members` : otherParticipant?.status || otherParticipant?.email
+
             return (
               <button
                 key={conv.id}
                 onClick={() => onSelectConversation(conv.id)}
-                className={`w-full p-3.5 text-left transition-colors flex items-center gap-3 cursor-pointer ${
+                className={`w-full p-3 text-left transition-colors flex items-center gap-3 cursor-pointer ${
                   isSelected
-                    ? "bg-emerald-500/10 border-l-4 border-l-emerald-600 pl-[10px]"
-                    : "hover:bg-muted/50"
+                    ? "bg-[#f0f2f5] dark:bg-[#2a3942] border-l-4 border-l-emerald-600 pl-2.5"
+                    : "hover:bg-muted/40"
                 }`}
               >
-                <div className="w-11 h-11 rounded-full overflow-hidden bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-semibold shrink-0 shadow-xs">
-                  {otherParticipant?.avatar_url ? (
-                    <img
-                      src={otherParticipant.avatar_url}
-                      alt={otherParticipant.display_name || "User"}
-                      className="w-full h-full object-cover"
-                    />
+                {/* Avatar */}
+                <div className="w-11 h-11 rounded-full overflow-hidden bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-bold text-base shrink-0 shadow-xs">
+                  {isGroup ? (
+                    <Users className="w-5 h-5 text-white" />
+                  ) : otherParticipant?.avatar_url ? (
+                    <img src={otherParticipant.avatar_url} alt={title} className="w-full h-full object-cover" />
                   ) : (
-                    otherParticipant?.display_name?.[0]?.toUpperCase() || otherParticipant?.email?.[0]?.toUpperCase() || "?"
+                    title?.[0]?.toUpperCase() || "?"
                   )}
                 </div>
+
+                {/* Details */}
                 <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-sm text-foreground truncate">
-                    {otherParticipant?.display_name || otherParticipant?.email?.split('@')[0] || "Chat"}
-                  </p>
-                  <p className="text-xs text-muted-foreground truncate">{otherParticipant?.email || ""}</p>
+                  <div className="flex items-center justify-between">
+                    <p className="font-semibold text-sm text-foreground truncate">{title}</p>
+                    <span className="text-[10px] text-muted-foreground shrink-0">
+                      {new Date(conv.updated_at || conv.created_at).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground truncate mt-0.5">{subtitle}</p>
                 </div>
               </button>
             )
           })
         )}
       </div>
+
+      {/* New Group Modal */}
+      {showNewGroupModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-card text-card-foreground w-full max-w-md rounded-2xl p-6 shadow-2xl border border-border space-y-4 animate-in zoom-in-95">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-foreground flex items-center gap-2">
+                <Users className="w-5 h-5 text-emerald-600" /> New Group
+              </h3>
+              <button
+                onClick={() => setShowNewGroupModal(false)}
+                className="text-muted-foreground hover:text-foreground cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground block mb-1">Group Subject</label>
+                <input
+                  type="text"
+                  placeholder="Type group subject here..."
+                  value={groupName}
+                  onChange={(e) => setGroupName(e.target.value)}
+                  className="w-full h-10 px-3 text-sm bg-background border border-border rounded-xl focus:outline-hidden focus:ring-1 focus:ring-emerald-500"
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground block mb-1.5">
+                  Add Members ({selectedGroupMembers.length} selected)
+                </label>
+                <div className="max-h-48 overflow-y-auto space-y-1.5 border border-border rounded-xl p-2 bg-background/50">
+                  {registeredUsers.length === 0 ? (
+                    <p className="text-xs text-muted-foreground p-2 text-center">No contacts available</p>
+                  ) : (
+                    registeredUsers.map((u) => {
+                      const isSelected = selectedGroupMembers.includes(u.id)
+                      return (
+                        <div
+                          key={u.id}
+                          onClick={() => toggleGroupMember(u.id)}
+                          className={`p-2 rounded-lg flex items-center justify-between cursor-pointer transition-colors ${
+                            isSelected ? "bg-emerald-500/10 border border-emerald-500/40" : "hover:bg-muted"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white text-xs font-bold">
+                              {u.display_name?.[0]?.toUpperCase() || "?"}
+                            </div>
+                            <div>
+                              <p className="text-xs font-semibold text-foreground">{u.display_name}</p>
+                              <p className="text-[10px] text-muted-foreground">{u.email}</p>
+                            </div>
+                          </div>
+                          <div
+                            className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors ${
+                              isSelected
+                                ? "bg-emerald-600 border-emerald-600 text-white"
+                                : "border-border bg-card"
+                            }`}
+                          >
+                            {isSelected && <Check className="w-3.5 h-3.5" />}
+                          </div>
+                        </div>
+                      )
+                    })
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-2 justify-end pt-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowNewGroupModal(false)}
+                className="rounded-xl"
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleCreateGroup}
+                disabled={!groupName.trim()}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold cursor-pointer disabled:opacity-50"
+              >
+                Create Group
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showProfileModal && (
         <ProfileDrawer

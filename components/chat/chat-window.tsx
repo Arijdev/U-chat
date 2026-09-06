@@ -19,6 +19,7 @@ import {
   Search,
   Loader2,
   ArrowLeft,
+  X,
 } from "lucide-react"
 import { encryptMessage, decryptMessage } from "@/lib/encryption"
 import { MessageBubble } from "./message-bubble"
@@ -50,6 +51,7 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
   const [searchInChat, setSearchInChat] = useState("")
   const [showSearch, setShowSearch] = useState(false)
   const [showContactInfo, setShowContactInfo] = useState(false)
+  const [replyingTo, setReplyingTo] = useState<{ id: string; content: string; sender_name: string } | null>(null)
 
   // Voice recording state
   const [isRecording, setIsRecording] = useState(false)
@@ -218,18 +220,21 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
 
       // Optimistic message
       const tempId = `msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
-      const optimisticMsg: ChatMessage = {
+      const optimisticMsg: any = {
         id: tempId,
         conversation_id: conversationId,
         sender_id: user.id,
         content: encryptedContent,
         message_type: "text",
         is_encrypted: isEncrypted,
+        reply_to: replyingTo || undefined,
         created_at: new Date().toISOString(),
       }
 
       decryptedMessagesRef.current.set(tempId, messageText)
       setMessages((prev) => [...prev, optimisticMsg])
+      const currentReply = replyingTo
+      setReplyingTo(null)
 
       // Persist to server store and broadcast via SSE
       const saved = await apiSendMessage({
@@ -238,6 +243,7 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
         content: encryptedContent,
         message_type: "text",
         is_encrypted: isEncrypted,
+        reply_to: currentReply || undefined,
       })
 
       if (saved && saved.id) {
@@ -260,7 +266,10 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
     setShowAttachMenu(false)
 
     const tempId = `msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
-    const optimisticMsg: ChatMessage = {
+    const currentReply = replyingTo
+    setReplyingTo(null)
+
+    const optimisticMsg: any = {
       id: tempId,
       conversation_id: conversationId,
       sender_id: user.id,
@@ -270,6 +279,7 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
       file_name: attachment.file_name,
       file_size: attachment.file_size,
       is_encrypted: false,
+      reply_to: currentReply || undefined,
       created_at: new Date().toISOString(),
     }
 
@@ -285,6 +295,7 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
         file_name: attachment.file_name,
         file_size: attachment.file_size,
         is_encrypted: false,
+        reply_to: currentReply || undefined,
       })
 
       if (saved && saved.id) {
@@ -293,6 +304,57 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
     } catch (e) {
       console.error("Error sending attachment:", e)
     }
+  }
+
+  // MESSAGE REACTIONS
+  const handleReact = async (messageId: string, emoji: string) => {
+    try {
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (m.id !== messageId) return m
+          const reactions = { ...(m.reactions || {}) }
+          const currentUsers = reactions[emoji] || []
+          const idx = currentUsers.indexOf(user.id)
+          if (idx > -1) {
+            reactions[emoji] = currentUsers.filter((id: string) => id !== user.id)
+            if (reactions[emoji].length === 0) delete reactions[emoji]
+          } else {
+            reactions[emoji] = [...currentUsers, user.id]
+          }
+          return { ...m, reactions }
+        })
+      )
+
+      await fetch("/api/chat/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "react",
+          messageId,
+          emoji,
+          userId: user.id,
+        }),
+      })
+    } catch (e) {}
+  }
+
+  // MESSAGE STARRING
+  const handleStar = async (messageId: string, isStarred: boolean) => {
+    try {
+      setMessages((prev) =>
+        prev.map((m) => (m.id === messageId ? { ...m, is_starred: isStarred } : m))
+      )
+
+      await fetch("/api/chat/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "star",
+          messageId,
+          isStarred,
+        }),
+      })
+    } catch (e) {}
   }
 
   // Handle Photo or Video Selection (No file size limit)
@@ -575,8 +637,12 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
               key={msg.id}
               msg={msg}
               isOwn={msg.sender_id === user.id}
+              currentUserId={user.id}
               onGetDecrypted={getDecryptedContent}
               onDelete={handleDeleteMessage}
+              onReply={setReplyingTo}
+              onReact={handleReact}
+              onStar={handleStar}
             />
           ))
         )}
@@ -586,6 +652,27 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
       {/* Hidden File Inputs (Unlimited Size) */}
       <input ref={fileInputRef} type="file" accept="image/*,video/*" onChange={handlePhotoOrVideoSelect} className="hidden" />
       <input ref={docInputRef} type="file" accept="*/*" onChange={handleDocumentSelect} className="hidden" />
+
+      {/* WhatsApp Quoted Reply Preview Bar */}
+      {replyingTo && (
+        <div className="bg-[#f0f2f5] dark:bg-[#1f2c34] px-4 py-2 border-t border-border/60 flex items-center justify-between animate-in slide-in-from-bottom-2 z-10">
+          <div className="flex items-center gap-3 border-l-4 border-emerald-500 pl-2.5 min-w-0">
+            <div>
+              <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                Replying to {replyingTo.sender_name}
+              </p>
+              <p className="text-xs text-muted-foreground truncate max-w-md">{replyingTo.content}</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setReplyingTo(null)}
+            className="w-6 h-6 rounded-full hover:bg-black/10 dark:hover:bg-white/10 flex items-center justify-center text-muted-foreground hover:text-foreground cursor-pointer"
+            title="Cancel reply"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* WhatsApp Input Bar */}
       <div className="p-2 md:px-4 md:py-3 bg-white dark:bg-[#202c33] border-t border-border/50 z-10">

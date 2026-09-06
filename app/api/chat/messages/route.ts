@@ -1,11 +1,24 @@
 import { NextRequest, NextResponse } from "next/server"
-import { getServerMessages, addServerMessage, deleteServerMessage } from "@/lib/server-store"
+import {
+  getServerMessages,
+  addServerMessage,
+  deleteServerMessage,
+  toggleServerMessageReaction,
+  toggleServerMessageStar,
+  getStarredMessages,
+} from "@/lib/server-store"
 
 export const dynamic = "force-dynamic"
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const conversationId = searchParams.get("conversationId")
+  const starredUserId = searchParams.get("starredUserId")
+
+  if (starredUserId) {
+    const starred = getStarredMessages(starredUserId)
+    return NextResponse.json(starred)
+  }
 
   if (!conversationId) {
     return NextResponse.json({ error: "Missing conversationId" }, { status: 400 })
@@ -18,7 +31,32 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { conversation_id, sender_id, content, message_type, media_url, file_name, file_size, is_encrypted } = body
+    const {
+      action,
+      messageId,
+      emoji,
+      userId,
+      isStarred,
+      conversation_id,
+      sender_id,
+      content,
+      message_type,
+      media_url,
+      file_name,
+      file_size,
+      is_encrypted,
+      reply_to,
+    } = body
+
+    if (action === "react" && messageId && emoji && userId) {
+      const updated = toggleServerMessageReaction(messageId, emoji, userId)
+      return NextResponse.json(updated || { error: "Message not found" })
+    }
+
+    if (action === "star" && messageId !== undefined && isStarred !== undefined) {
+      const updated = toggleServerMessageStar(messageId, Boolean(isStarred))
+      return NextResponse.json(updated || { error: "Message not found" })
+    }
 
     if (!conversation_id || !sender_id) {
       return NextResponse.json({ error: "Missing required message fields" }, { status: 400 })
@@ -33,6 +71,7 @@ export async function POST(req: NextRequest) {
       file_name,
       file_size,
       is_encrypted: is_encrypted || false,
+      reply_to,
     })
 
     return NextResponse.json(newMsg)

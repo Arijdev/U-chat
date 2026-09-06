@@ -2,13 +2,20 @@
 
 import type { User } from "@supabase/supabase-js"
 import { useState, useEffect, useCallback, useRef } from "react"
+import { NavRail, type NavTab } from "./nav-rail"
 import ChatSidebar from "./chat-sidebar"
 import ChatWindow from "./chat-window"
 import StoriesView from "./stories-view"
 import CallHistory from "./call-history"
+import { SettingsDrawer } from "./settings-drawer"
+import { StarredMessagesDrawer } from "./starred-messages-drawer"
+import { ChannelsView } from "./channels-view"
+import { CommunitiesView } from "./communities-view"
+import { MetaAiView } from "./meta-ai-view"
+import { ProfileDrawer } from "./profile-drawer"
 import { VideoCallInterface } from "./video-call-interface"
 import { Button } from "@/components/ui/button"
-import { Phone, PhoneOff } from "lucide-react"
+import { Phone, PhoneOff, Lock } from "lucide-react"
 import {
   apiRegisterUser,
   apiGetConversations,
@@ -38,10 +45,10 @@ interface IncomingCallData {
 
 export default function ChatLayout({ user }: { user: User }) {
   const [selectedConversation, setSelectedConversation] = useState<string | null>(null)
-  const [showStories, setShowStories] = useState(false)
-  const [showCallHistory, setShowCallHistory] = useState(false)
+  const [activeTab, setActiveTab] = useState<NavTab>("chats")
   const [conversations, setConversations] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [showProfileDrawer, setShowProfileDrawer] = useState(false)
 
   // Global call state
   const [activeCall, setActiveCall] = useState<ActiveCallData | null>(null)
@@ -172,8 +179,7 @@ export default function ChatLayout({ user }: { user: User }) {
 
     if (callToAccept.conversationId) {
       setSelectedConversation(callToAccept.conversationId)
-      setShowStories(false)
-      setShowCallHistory(false)
+      setActiveTab("chats")
     }
 
     try {
@@ -309,68 +315,195 @@ export default function ChatLayout({ user }: { user: User }) {
     })
   }
 
-  const isDetailActive = Boolean(selectedConversation || showStories || showCallHistory)
+  const isDetailActive = Boolean(selectedConversation && activeTab === "chats")
 
   return (
-    <div className="flex h-screen bg-background text-foreground w-full overflow-hidden relative">
-      <ChatSidebar
+    <div className="flex h-screen bg-background text-foreground w-full overflow-hidden relative pb-14 md:pb-0">
+      {/* 1. Left Vertical Navigation Rail (Desktop) & Bottom Navigation Bar (Mobile) */}
+      <NavRail
         user={user}
-        conversations={conversations}
-        selectedConversation={selectedConversation}
-        onSelectConversation={(id) => {
-          setSelectedConversation(id)
-          setShowStories(false)
-          setShowCallHistory(false)
+        activeTab={activeTab}
+        onSelectTab={(tab) => {
+          setActiveTab(tab)
+          if (tab !== "chats") {
+            setSelectedConversation(null)
+          }
         }}
-        onShowStories={() => {
-          setShowStories(true)
-          setShowCallHistory(false)
-        }}
-        onShowCallHistory={() => {
-          setShowCallHistory(true)
-          setShowStories(false)
-        }}
-        loading={loading}
-        className={isDetailActive ? "hidden md:flex" : "flex"}
+        onOpenProfile={() => setShowProfileDrawer(true)}
       />
 
-      {showStories ? (
-        <StoriesView
+      {/* 2. Main Center / Split Content Area */}
+      <div className="flex-1 flex overflow-hidden relative">
+        {/* TAB 1: CHATS (Sidebar + ChatWindow) */}
+        {activeTab === "chats" && (
+          <>
+            <ChatSidebar
+              user={user}
+              conversations={conversations}
+              selectedConversation={selectedConversation}
+              onSelectConversation={(id) => {
+                setSelectedConversation(id)
+              }}
+              onShowStories={() => setActiveTab("stories")}
+              onShowCallHistory={() => setActiveTab("calls")}
+              loading={loading}
+              className={isDetailActive ? "hidden md:flex" : "flex"}
+            />
+
+            {selectedConversation ? (
+              <ChatWindow
+                conversationId={selectedConversation}
+                user={user}
+                onBack={() => setSelectedConversation(null)}
+                onStartCall={handleStartCall}
+              />
+            ) : (
+              <div className="flex-1 hidden md:flex flex-col items-center justify-center bg-[#f0f2f5] dark:bg-[#222e35] border-b-6 border-b-emerald-500">
+                <div className="text-center p-8 max-w-md space-y-4">
+                  <div className="w-20 h-20 rounded-full bg-emerald-600/10 text-emerald-600 flex items-center justify-center mx-auto text-4xl shadow-xs animate-in zoom-in duration-300">
+                    💬
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-bold text-foreground mb-2">WhatsApp Web</h2>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      Send and receive messages with end-to-end encryption. Seamless real-time sync with photos, documents, voice notes, and HD video calls.
+                    </p>
+                  </div>
+                  <div className="pt-8 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+                    <Lock className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>End-to-end encrypted</span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* TAB 2: STORIES / STATUS */}
+        {activeTab === "stories" && (
+          <StoriesView
+            user={user}
+            onClose={() => setActiveTab("chats")}
+            onOpenChatWithContact={(convId) => {
+              setActiveTab("chats")
+              setSelectedConversation(convId)
+            }}
+          />
+        )}
+
+        {/* TAB 3: CHANNELS */}
+        {activeTab === "channels" && (
+          <ChannelsView user={user} onClose={() => setActiveTab("chats")} />
+        )}
+
+        {/* TAB 4: COMMUNITIES */}
+        {activeTab === "communities" && (
+          <CommunitiesView
+            user={user}
+            onClose={() => setActiveTab("chats")}
+            onOpenGroupChat={(groupName) => {
+              setActiveTab("chats")
+            }}
+          />
+        )}
+
+        {/* TAB 5: META AI */}
+        {activeTab === "meta_ai" && (
+          <MetaAiView user={user} onClose={() => setActiveTab("chats")} />
+        )}
+
+        {/* TAB 6: STARRED MESSAGES */}
+        {activeTab === "starred" && (
+          <div className="flex flex-1 overflow-hidden">
+            <StarredMessagesDrawer
+              user={user}
+              onClose={() => setActiveTab("chats")}
+              onSelectConversation={(convId) => {
+                setActiveTab("chats")
+                setSelectedConversation(convId)
+              }}
+            />
+            <div className="hidden md:flex flex-1 items-center justify-center bg-[#f0f2f5] dark:bg-[#222e35] text-muted-foreground text-xs">
+              Select a starred message to jump directly to its conversation.
+            </div>
+          </div>
+        )}
+
+        {/* TAB 7: ARCHIVED CHATS */}
+        {activeTab === "archived" && (
+          <>
+            <ChatSidebar
+              user={user}
+              conversations={conversations}
+              selectedConversation={selectedConversation}
+              onSelectConversation={(id) => {
+                setActiveTab("chats")
+                setSelectedConversation(id)
+              }}
+              onShowStories={() => setActiveTab("stories")}
+              onShowCallHistory={() => setActiveTab("calls")}
+              loading={loading}
+              className={isDetailActive ? "hidden md:flex" : "flex"}
+            />
+            {selectedConversation ? (
+              <ChatWindow
+                conversationId={selectedConversation}
+                user={user}
+                onBack={() => setSelectedConversation(null)}
+                onStartCall={handleStartCall}
+              />
+            ) : (
+              <div className="hidden md:flex flex-1 items-center justify-center bg-[#f0f2f5] dark:bg-[#222e35] text-muted-foreground text-xs">
+                Archived chats stay archived when new messages are received.
+              </div>
+            )}
+          </>
+        )}
+
+        {/* TAB 8: SETTINGS */}
+        {activeTab === "settings" && (
+          <div className="flex flex-1 overflow-hidden">
+            <SettingsDrawer
+              user={user}
+              onClose={() => setActiveTab("chats")}
+              onOpenProfile={() => setShowProfileDrawer(true)}
+            />
+            <div className="hidden md:flex flex-1 items-center justify-center bg-[#f0f2f5] dark:bg-[#222e35] text-muted-foreground text-xs">
+              Configure personal profile, privacy, themes, wallpaper, notifications and shortcuts.
+            </div>
+          </div>
+        )}
+
+        {/* TAB 9: CALLS */}
+        {activeTab === "calls" && (
+          <div className="flex flex-1 overflow-hidden">
+            <CallHistory user={user} onClose={() => setActiveTab("chats")} />
+            <div className="hidden md:flex flex-1 items-center justify-center bg-[#f0f2f5] dark:bg-[#222e35] text-muted-foreground text-xs">
+              Call history and logs are synced across your linked devices.
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 3. Global Profile Drawer (when avatar clicked) */}
+      {showProfileDrawer && (
+        <ProfileDrawer
           user={user}
-          onClose={() => setShowStories(false)}
-          onOpenChatWithContact={(convId) => {
-            setShowStories(false)
-            setSelectedConversation(convId)
+          currentProfile={{
+            id: user.id,
+            email: user.email || "",
+            display_name: user.user_metadata?.display_name || user.email?.split("@")[0] || "User",
+            status: user.user_metadata?.status || "Hey there! I am using WhatsApp.",
+            avatar_url: user.user_metadata?.avatar_url || "",
+          }}
+          onClose={() => setShowProfileDrawer(false)}
+          onProfileUpdated={() => {
+            loadConversations()
           }}
         />
-      ) : selectedConversation ? (
-        <ChatWindow
-          conversationId={selectedConversation}
-          user={user}
-          onBack={() => setSelectedConversation(null)}
-          onStartCall={handleStartCall}
-        />
-      ) : (
-        <div className="flex-1 hidden md:flex items-center justify-center bg-gradient-to-br from-background via-muted/20 to-accent/10">
-          <div className="text-center p-8 max-w-sm">
-            <div className="w-16 h-16 rounded-2xl bg-emerald-600/10 text-emerald-600 flex items-center justify-center mx-auto mb-4 text-3xl shadow-xs">
-              💬
-            </div>
-            <h2 className="text-xl font-bold text-foreground mb-1">WhatsApp Web</h2>
-            <p className="text-sm text-muted-foreground">
-              Send and receive messages with real-time end-to-end sync, voice notes, photos, and calls.
-            </p>
-          </div>
-        </div>
       )}
 
-      {showCallHistory && (
-        <div className="fixed inset-0 md:relative z-40 bg-background/80 md:bg-transparent flex justify-end">
-          <CallHistory user={user} onClose={() => setShowCallHistory(false)} />
-        </div>
-      )}
-
-      {/* Incoming Call Notification (WhatsApp style banner) */}
+      {/* 4. Incoming Call Notification (WhatsApp style banner) */}
       {incomingCall && (
         <div className="fixed top-5 right-5 z-50 pointer-events-auto animate-in slide-in-from-top-4 duration-300">
           <div className="w-80 md:w-88 bg-card/95 backdrop-blur-md rounded-2xl shadow-2xl border-2 border-emerald-500/50 overflow-hidden text-card-foreground p-4">
@@ -406,7 +539,7 @@ export default function ChatLayout({ user }: { user: User }) {
         </div>
       )}
 
-      {/* Global Full-Screen Active Voice/Video Call Interface */}
+      {/* 5. Global Full-Screen Active Voice/Video Call Interface */}
       {activeCall && (
         <VideoCallInterface
           callType={activeCall.callType}
