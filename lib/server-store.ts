@@ -41,6 +41,7 @@ export interface ServerCall {
   status: "ringing" | "active" | "completed" | "rejected"
   duration_seconds?: number
   created_at: string
+  conversation_id?: string
 }
 
 export interface ServerSignaling {
@@ -319,7 +320,14 @@ export function addServerCall(call: Omit<ServerCall, "id" | "created_at">): Serv
   store.calls.unshift(newCall)
   saveStore()
 
-  notifyUser(call.receiver_id, { type: "call_incoming", payload: newCall })
+  const callerUser = store.users.find((u) => u.id === call.caller_id)
+  notifyUser(call.receiver_id, {
+    type: "call_incoming",
+    payload: {
+      ...newCall,
+      caller_name: callerUser?.display_name || callerUser?.email?.split("@")[0] || "Contact",
+    },
+  })
   return newCall
 }
 
@@ -336,9 +344,15 @@ export function updateServerCall(callId: string, status: ServerCall["status"], d
   return call
 }
 
-export function getServerCalls(userId: string): ServerCall[] {
+export function getServerCalls(userId: string): any[] {
+  const userMap = new Map(store.users.map((u) => [u.id, u]))
   return store.calls
     .filter((c) => c.caller_id === userId || c.receiver_id === userId)
+    .map((c) => ({
+      ...c,
+      caller: userMap.get(c.caller_id) || { id: c.caller_id, display_name: "Contact" },
+      receiver: userMap.get(c.receiver_id) || { id: c.receiver_id, display_name: "Contact" },
+    }))
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
 }
 

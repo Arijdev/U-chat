@@ -18,11 +18,21 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { action, callId, caller_id, receiver_id, call_type, status, duration } = body
+    const { action, callId, caller_id, receiver_id, call_type, status, duration, conversation_id } = body
 
-    if (action === "update" && callId) {
-      const updated = updateServerCall(callId, status, duration)
-      return NextResponse.json(updated)
+    if (action === "update") {
+      let targetCallId = callId
+      if (!targetCallId && (caller_id || receiver_id)) {
+        const calls = getServerCalls(caller_id || receiver_id)
+        if (calls.length > 0) {
+          targetCallId = calls[0].id
+        }
+      }
+      if (targetCallId) {
+        const updated = updateServerCall(targetCallId, status, duration)
+        return NextResponse.json(updated || { ok: true })
+      }
+      return NextResponse.json({ ok: true })
     }
 
     if (!caller_id || !receiver_id) {
@@ -34,6 +44,7 @@ export async function POST(req: NextRequest) {
       receiver_id,
       call_type: call_type || "voice",
       status: "ringing",
+      conversation_id,
     })
 
     return NextResponse.json(newCall)

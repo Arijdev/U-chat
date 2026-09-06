@@ -21,10 +21,8 @@ import {
   ArrowLeft,
 } from "lucide-react"
 import { encryptMessage, decryptMessage } from "@/lib/encryption"
-import { VideoCallInterface } from "./video-call-interface"
 import { MessageBubble } from "./message-bubble"
 import { ContactInfoDrawer } from "./contact-info-drawer"
-import { createSignaling, dispatchSignalingMessage } from "@/lib/signaling"
 import {
   apiGetMessages,
   apiSendMessage,
@@ -39,9 +37,10 @@ interface ChatWindowProps {
   conversationId: string
   user: User
   onBack?: () => void
+  onStartCall?: (type: "voice" | "video", otherUser: any) => void
 }
 
-export default function ChatWindow({ conversationId, user, onBack }: ChatWindowProps) {
+export default function ChatWindow({ conversationId, user, onBack, onStartCall }: ChatWindowProps) {
   const [messages, setMessages] = useState<any[]>([])
   const [newMessage, setNewMessage] = useState("")
   const [loading, setLoading] = useState(true)
@@ -59,26 +58,10 @@ export default function ChatWindow({ conversationId, user, onBack }: ChatWindowP
   const audioChunksRef = useRef<Blob[]>([])
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null)
 
-  // Calling state
-  const [showCallModal, setShowCallModal] = useState(false)
-  const [callType, setCallType] = useState<"voice" | "video">("voice")
-  const [incomingCall, setIncomingCall] = useState<{
-    callerId: string
-    callerName: string
-    callType: "voice" | "video"
-  } | null>(null)
-  const [activeCall, setActiveCall] = useState<{
-    type: "voice" | "video"
-    startTime: number
-  } | null>(null)
-  const [isCaller, setIsCaller] = useState(false)
-
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const docInputRef = useRef<HTMLInputElement>(null)
   const decryptedMessagesRef = useRef<Map<string, string>>(new Map())
-  const callTimerRef = useRef<NodeJS.Timeout | null>(null)
-  const signalingRef = useRef<any>(null)
 
   const emojis = ["😀", "😂", "❤️", "👍", "🎉", "🔥", "😍", "🤔", "😢", "😡", "👏", "🙏", "💯", "✨", "🎊", "🙌", "🤩", "🚀", "👌", "🥳"]
 
@@ -189,39 +172,6 @@ export default function ChatWindow({ conversationId, user, onBack }: ChatWindowP
           break
         }
 
-        case "signaling": {
-          const sig = event.payload?.payload || event.payload
-          if (sig) {
-            dispatchSignalingMessage(user.id, sig)
-          }
-          break
-        }
-
-        case "call_incoming": {
-          const call = event.payload
-          if (call && call.caller_id !== user.id) {
-            setIncomingCall({
-              callerId: call.caller_id,
-              callerName: call.caller_name || otherUser?.display_name || "Contact",
-              callType: call.call_type || "voice",
-            })
-          }
-          break
-        }
-
-        case "call_status": {
-          const call = event.payload
-          if (call?.status === "completed" || call?.status === "rejected") {
-            setActiveCall(null)
-            setIncomingCall(null)
-            setShowCallModal(false)
-          } else if (call?.status === "active") {
-            setActiveCall((prev) => prev || { type: call.call_type || "voice", startTime: Date.now() })
-            setIncomingCall(null)
-          }
-          break
-        }
-
         case "heartbeat_poll": {
           // Quiet background sync to ensure zero missed messages
           apiGetMessages(conversationId).then((latest) => {
@@ -246,55 +196,6 @@ export default function ChatWindow({ conversationId, user, onBack }: ChatWindowP
       disconnectStream()
     }
   }, [conversationId, user.id, otherUser?.display_name])
-
-  // WebRTC Signaling setup
-  useEffect(() => {
-    if (!user?.id) return
-
-    const signaling = createSignaling(user.id)
-
-    const remove = signaling.addListener((msg: any) => {
-      try {
-        switch (msg.type) {
-          case "call":
-            if (msg.to === user.id) {
-              setIncomingCall({
-                callerId: msg.from,
-                callerName: msg.fromName || otherUser?.display_name || "Contact",
-                callType: msg.callType || "voice",
-              })
-            }
-            break
-          case "call-accepted":
-            if (msg.to === user.id) {
-              setActiveCall({ type: msg.callType || "voice", startTime: Date.now() })
-              setIncomingCall(null)
-            }
-            break
-          case "call-rejected":
-          case "call-ended":
-            if (msg.to === user.id) {
-              setActiveCall(null)
-              setIncomingCall(null)
-              setShowCallModal(false)
-            }
-            break
-          default:
-            break
-        }
-      } catch (err) {}
-    })
-
-    signalingRef.current = signaling
-
-    return () => {
-      try {
-        remove()
-        signaling.close()
-      } catch (err) {}
-      signalingRef.current = null
-    }
-  }, [user.id, otherUser?.display_name])
 
   // SEND TEXT MESSAGE
   const handleSendMessage = async () => {
@@ -519,104 +420,11 @@ export default function ChatWindow({ conversationId, user, onBack }: ChatWindowP
   )
 
   // CALL HANDLERS
-  const handleCall = async (type: "voice" | "video") => {
+  const handleCall = (type: "voice" | "video") => {
     if (!otherUser?.id) return
-
-    try {
-      const constraints = type === "video" ? { audio: true, video: true } : { audio: true, video: false }
-      const stream = await navigator.mediaDevices.getUserMedia(constraints)
-      stream.getTracks().forEach((t) => t.stop())
-    } catch (err) {
-      alert("Microphone and camera permission are required to start a call.")
-      return
+    if (onStartCall) {
+      onStartCall(type, otherUser)
     }
-
-    try {
-      await fetch("/api/chat/calls", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          caller_id: user.id,
-          receiver_id: otherUser.id,
-          call_type: type,
-        }),
-      })
-
-      setShowCallModal(true)
-      setCallType(type)
-      setIsCaller(true)
-
-      signalingRef.current?.send({
-        type: "call",
-        from: user.id,
-        to: otherUser.id,
-        callType: type,
-        conversationId,
-        fromName: (user as any)?.email || user.id,
-      })
-    } catch (err) {}
-  }
-
-  const handleCallEnd = async (duration: number) => {
-    try {
-      await fetch("/api/chat/calls", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "update",
-          status: "completed",
-          duration,
-        }),
-      })
-
-      setActiveCall(null)
-      setIsCaller(false)
-      signalingRef.current?.send({ type: "call-ended", from: user.id, to: otherUser?.id, conversationId })
-    } catch (err) {}
-  }
-
-  const handleAcceptCall = async () => {
-    try {
-      const constraints = incomingCall?.callType === "video" ? { audio: true, video: true } : { audio: true, video: false }
-      const stream = await navigator.mediaDevices.getUserMedia(constraints)
-      stream.getTracks().forEach((t) => t.stop())
-    } catch (err) {
-      alert("Microphone and camera permission are required to accept a call.")
-      return
-    }
-
-    try {
-      await fetch("/api/chat/calls", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "update",
-          status: "active",
-        }),
-      })
-
-      setActiveCall({ type: incomingCall?.callType || "voice", startTime: Date.now() })
-      setIncomingCall(null)
-      setIsCaller(false)
-      signalingRef.current?.send({ type: "call-accepted", from: user.id, to: incomingCall?.callerId, conversationId })
-    } catch (err) {}
-  }
-
-  const handleRejectCall = async () => {
-    try {
-      await fetch("/api/chat/calls", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "update",
-          status: "rejected",
-        }),
-      })
-
-      setIncomingCall(null)
-      setIsCaller(false)
-      signalingRef.current?.send({ type: "call-rejected", from: user.id, to: incomingCall?.callerId, conversationId })
-    } catch (err) {}
   }
 
   const addEmoji = (emoji: string) => {
@@ -739,59 +547,6 @@ export default function ChatWindow({ conversationId, user, onBack }: ChatWindowP
         </div>
       )}
 
-      {/* Incoming Call Notification (WhatsApp style) */}
-      {incomingCall && (
-        <div className="fixed top-4 right-4 z-50 pointer-events-auto animate-in slide-in-from-top-3">
-          <div className="w-80 bg-card/95 backdrop-blur-md rounded-2xl shadow-2xl border border-emerald-500/40 overflow-hidden text-card-foreground">
-            <div className="flex items-center gap-3 p-4">
-              <div className="w-12 h-12 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-semibold text-lg shrink-0 shadow-sm animate-pulse">
-                {incomingCall.callerName?.[0]?.toUpperCase() || "?"}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-foreground truncate">{incomingCall.callerName}</p>
-                <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium truncate">
-                  Incoming WhatsApp {incomingCall.callType} call...
-                </p>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <Button
-                  onClick={handleAcceptCall}
-                  className="w-10 h-10 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white p-0 flex items-center justify-center shadow-md cursor-pointer"
-                  title="Answer"
-                >
-                  <Phone className="w-4 h-4" />
-                </Button>
-                <Button
-                  onClick={handleRejectCall}
-                  className="w-10 h-10 rounded-full bg-red-600 hover:bg-red-700 text-white p-0 flex items-center justify-center shadow-md cursor-pointer"
-                  title="Decline"
-                >
-                  <PhoneOff className="w-4 h-4" />
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Video / Audio Call Interface */}
-      {activeCall && (
-        <VideoCallInterface
-          callType={activeCall.type}
-          otherUserName={otherUser?.display_name || "User"}
-          onCallEnd={handleCallEnd}
-          onClose={() => {
-            setActiveCall(null)
-            setIsCaller(false)
-            if (callTimerRef.current) clearInterval(callTimerRef.current)
-          }}
-          signaling={signalingRef.current}
-          localUserId={user.id}
-          otherUserId={otherUser?.id}
-          conversationId={conversationId}
-          isCaller={isCaller}
-        />
-      )}
 
       {/* Chat Area & Contact Info Drawer */}
       <div className="flex-1 flex overflow-hidden relative">

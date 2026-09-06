@@ -1,17 +1,40 @@
 "use client"
 
 import type { User } from "@supabase/supabase-js"
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import ChatSidebar from "./chat-sidebar"
 import ChatWindow from "./chat-window"
 import StoriesView from "./stories-view"
 import CallHistory from "./call-history"
+import { VideoCallInterface } from "./video-call-interface"
+import { Button } from "@/components/ui/button"
+import { Phone, PhoneOff } from "lucide-react"
 import {
   apiRegisterUser,
   apiGetConversations,
   connectChatStream,
 } from "@/lib/chat-api"
 import { registerProfile } from "@/lib/dataset"
+import { createSignaling, dispatchSignalingMessage } from "@/lib/signaling"
+import { playIncomingRingtone, stopCallSounds } from "@/lib/sound"
+
+interface ActiveCallData {
+  callId?: string
+  callType: "voice" | "video"
+  otherUserId: string
+  otherUserName: string
+  conversationId?: string
+  isCaller: boolean
+  startTime: number
+}
+
+interface IncomingCallData {
+  callId?: string
+  callerId: string
+  callerName: string
+  callType: "voice" | "video"
+  conversationId?: string
+}
 
 export default function ChatLayout({ user }: { user: User }) {
   const [selectedConversation, setSelectedConversation] = useState<string | null>(null)
@@ -19,6 +42,11 @@ export default function ChatLayout({ user }: { user: User }) {
   const [showCallHistory, setShowCallHistory] = useState(false)
   const [conversations, setConversations] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+
+  // Global call state
+  const [activeCall, setActiveCall] = useState<ActiveCallData | null>(null)
+  const [incomingCall, setIncomingCall] = useState<IncomingCallData | null>(null)
+  const signalingRef = useRef<any>(null)
 
   // 1. Register current user on the backend server and local store
   useEffect(() => {
@@ -43,10 +71,45 @@ export default function ChatLayout({ user }: { user: User }) {
     }
   }, [user.id])
 
+  // Initialize universal signaling client
+  useEffect(() => {
+    if (!user?.id) return
+    const signaling = createSignaling(user.id)
+    signalingRef.current = signaling
+
+    const removeListener = signaling.addListener((msg: any) => {
+      if (msg.to && msg.to !== user.id) return
+
+      switch (msg.type) {
+        case "call":
+          setIncomingCall({
+            callId: msg.callId,
+            callerId: msg.from,
+            callerName: msg.fromName || "Contact",
+            callType: msg.callType || "voice",
+            conversationId: msg.conversationId,
+          })
+          break
+
+        case "call-rejected":
+        case "call-ended":
+          setActiveCall(null)
+          setIncomingCall(null)
+          stopCallSounds()
+          break
+      }
+    })
+
+    return () => {
+      removeListener()
+      signaling.close()
+    }
+  }, [user.id])
+
+  // Realtime server stream: updates conversations, catches SSE signaling and call notifications
   useEffect(() => {
     loadConversations()
 
-    // Realtime server stream: updates instantaneously when any message or conversation is created
     const disconnectStream = connectChatStream(user.id, (event) => {
       if (
         event.type === "conversation_created" ||
@@ -56,6 +119,31 @@ export default function ChatLayout({ user }: { user: User }) {
       ) {
         loadConversations()
       }
+
+      if (event.type === "signaling") {
+        const sig = event.payload?.payload || event.payload
+        if (sig) {
+          dispatchSignalingMessage(user.id, sig)
+        }
+      } else if (event.type === "call_incoming") {
+        const call = event.payload
+        if (call && call.caller_id !== user.id) {
+          setIncomingCall({
+            callId: call.id,
+            callerId: call.caller_id,
+            callerName: call.caller_name || "Contact",
+            callType: call.call_type || "voice",
+            conversationId: call.conversation_id,
+          })
+        }
+      } else if (event.type === "call_status") {
+        const call = event.payload
+        if (call?.status === "completed" || call?.status === "rejected") {
+          setActiveCall(null)
+          setIncomingCall(null)
+          stopCallSounds()
+        }
+      }
     })
 
     return () => {
@@ -63,10 +151,168 @@ export default function ChatLayout({ user }: { user: User }) {
     }
   }, [user.id, loadConversations])
 
+  // Play incoming ringtone when receiving a call
+  useEffect(() => {
+    if (incomingCall) {
+      playIncomingRingtone()
+    } else {
+      stopCallSounds()
+    }
+    return () => {
+      stopCallSounds()
+    }
+  }, [incomingCall])
+
+  // Accept incoming call
+  const handleAcceptCall = async () => {
+    if (!incomingCall) return
+    const callToAccept = incomingCall
+    stopCallSounds()
+    setIncomingCall(null)
+
+    if (callToAccept.conversationId) {
+      setSelectedConversation(callToAccept.conversationId)
+      setShowStories(false)
+      setShowCallHistory(false)
+    }
+
+    try {
+      await fetch("/api/chat/calls", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "update",
+          callId: callToAccept.callId,
+          caller_id: callToAccept.callerId,
+          receiver_id: user.id,
+          status: "active",
+        }),
+      })
+    } catch (e) {}
+
+    setActiveCall({
+      callId: callToAccept.callId,
+      callType: callToAccept.callType,
+      otherUserId: callToAccept.callerId,
+      otherUserName: callToAccept.callerName,
+      conversationId: callToAccept.conversationId,
+      isCaller: false,
+      startTime: Date.now(),
+    })
+
+    signalingRef.current?.send({
+      type: "call-accepted",
+      from: user.id,
+      to: callToAccept.callerId,
+      callType: callToAccept.callType,
+      conversationId: callToAccept.conversationId,
+    })
+  }
+
+  // Reject incoming call
+  const handleRejectCall = async () => {
+    if (!incomingCall) return
+    const callToReject = incomingCall
+    stopCallSounds()
+    setIncomingCall(null)
+
+    try {
+      await fetch("/api/chat/calls", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "update",
+          callId: callToReject.callId,
+          caller_id: callToReject.callerId,
+          receiver_id: user.id,
+          status: "rejected",
+        }),
+      })
+    } catch (e) {}
+
+    signalingRef.current?.send({
+      type: "call-rejected",
+      from: user.id,
+      to: callToReject.callerId,
+      conversationId: callToReject.conversationId,
+    })
+  }
+
+  // Start outgoing call from ChatWindow
+  const handleStartCall = async (type: "voice" | "video", targetUser: any) => {
+    if (!targetUser?.id) return
+
+    try {
+      const res = await fetch("/api/chat/calls", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          caller_id: user.id,
+          receiver_id: targetUser.id,
+          call_type: type,
+          conversation_id: selectedConversation || undefined,
+        }),
+      })
+      const callData = await res.json()
+
+      setActiveCall({
+        callId: callData.id,
+        callType: type,
+        otherUserId: targetUser.id,
+        otherUserName: targetUser.display_name || targetUser.email?.split("@")[0] || "Contact",
+        conversationId: selectedConversation || undefined,
+        isCaller: true,
+        startTime: Date.now(),
+      })
+
+      signalingRef.current?.send({
+        type: "call",
+        callId: callData.id,
+        from: user.id,
+        to: targetUser.id,
+        callType: type,
+        conversationId: selectedConversation || undefined,
+        fromName: user.user_metadata?.display_name || user.email?.split("@")[0] || "Contact",
+      })
+    } catch (e) {
+      console.error("Start call error:", e)
+    }
+  }
+
+  // End active call
+  const handleCallEnd = async (duration: number) => {
+    if (!activeCall) return
+    const current = activeCall
+    stopCallSounds()
+    setActiveCall(null)
+
+    try {
+      await fetch("/api/chat/calls", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "update",
+          callId: current.callId,
+          caller_id: current.isCaller ? user.id : current.otherUserId,
+          receiver_id: current.isCaller ? current.otherUserId : user.id,
+          status: "completed",
+          duration,
+        }),
+      })
+    } catch (e) {}
+
+    signalingRef.current?.send({
+      type: "call-ended",
+      from: user.id,
+      to: current.otherUserId,
+      conversationId: current.conversationId,
+    })
+  }
+
   const isDetailActive = Boolean(selectedConversation || showStories || showCallHistory)
 
   return (
-    <div className="flex h-screen bg-background text-foreground w-full overflow-hidden">
+    <div className="flex h-screen bg-background text-foreground w-full overflow-hidden relative">
       <ChatSidebar
         user={user}
         conversations={conversations}
@@ -102,6 +348,7 @@ export default function ChatLayout({ user }: { user: User }) {
           conversationId={selectedConversation}
           user={user}
           onBack={() => setSelectedConversation(null)}
+          onStartCall={handleStartCall}
         />
       ) : (
         <div className="flex-1 hidden md:flex items-center justify-center bg-gradient-to-br from-background via-muted/20 to-accent/10">
@@ -121,6 +368,60 @@ export default function ChatLayout({ user }: { user: User }) {
         <div className="fixed inset-0 md:relative z-40 bg-background/80 md:bg-transparent flex justify-end">
           <CallHistory user={user} onClose={() => setShowCallHistory(false)} />
         </div>
+      )}
+
+      {/* Incoming Call Notification (WhatsApp style banner) */}
+      {incomingCall && (
+        <div className="fixed top-5 right-5 z-50 pointer-events-auto animate-in slide-in-from-top-4 duration-300">
+          <div className="w-80 md:w-88 bg-card/95 backdrop-blur-md rounded-2xl shadow-2xl border-2 border-emerald-500/50 overflow-hidden text-card-foreground p-4">
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-bold text-lg shrink-0 shadow-md animate-pulse">
+                {incomingCall.callerName?.[0]?.toUpperCase() || "?"}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-foreground truncate">{incomingCall.callerName}</p>
+                <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1.5 mt-0.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping inline-block" />
+                  Incoming WhatsApp {incomingCall.callType} call...
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <Button
+                  onClick={handleAcceptCall}
+                  className="w-10 h-10 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white p-0 flex items-center justify-center shadow-lg cursor-pointer transition-transform hover:scale-105 active:scale-95"
+                  title="Answer"
+                >
+                  <Phone className="w-4 h-4" />
+                </Button>
+                <Button
+                  onClick={handleRejectCall}
+                  className="w-10 h-10 rounded-full bg-red-600 hover:bg-red-700 text-white p-0 flex items-center justify-center shadow-lg cursor-pointer transition-transform hover:scale-105 active:scale-95"
+                  title="Decline"
+                >
+                  <PhoneOff className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Global Full-Screen Active Voice/Video Call Interface */}
+      {activeCall && (
+        <VideoCallInterface
+          callType={activeCall.callType}
+          otherUserName={activeCall.otherUserName}
+          onCallEnd={handleCallEnd}
+          onClose={() => {
+            stopCallSounds()
+            setActiveCall(null)
+          }}
+          signaling={signalingRef.current}
+          localUserId={user.id}
+          otherUserId={activeCall.otherUserId}
+          conversationId={activeCall.conversationId}
+          isCaller={activeCall.isCaller}
+        />
       )}
     </div>
   )
