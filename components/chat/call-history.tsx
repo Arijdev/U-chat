@@ -34,8 +34,10 @@ export default function CallHistory({ user, onClose }: CallHistoryProps) {
           .limit(50)
 
         if (callsError) {
-          console.error('Error fetching calls:', callsError)
-          throw callsError
+          console.warn('Call history not available or error fetching calls:', callsError.message)
+          setCalls([])
+          setLoading(false)
+          return
         }
 
         if (!calls?.length) {
@@ -57,8 +59,10 @@ export default function CallHistory({ user, onClose }: CallHistoryProps) {
           .in('id', Array.from(userIds))
 
         if (profilesError) {
-          console.error('Error fetching profiles:', profilesError)
-          throw profilesError
+          console.warn('Error fetching profiles:', profilesError.message)
+          setCalls(calls)
+          setLoading(false)
+          return
         }
 
         // Map profiles to calls
@@ -69,18 +73,13 @@ export default function CallHistory({ user, onClose }: CallHistoryProps) {
           receiver: profileMap.get(call.receiver_id) || null
         }))
 
-        // Errors for the two queries were handled above (callsError / profilesError).
-        // Use the enriched call entries we just built.
+        // Errors for the two queries were handled above.
         console.log('Call history data (enriched):', callsWithProfiles)
         setCalls(callsWithProfiles || [])
         setLoading(false)
-      } catch (err) {
-        console.error('Unexpected error:', err)
-        toast({
-          title: "Error loading call history",
-          description: "An unexpected error occurred",
-          variant: "destructive"
-        })
+      } catch (err: any) {
+        console.warn('Unexpected error loading call history:', err?.message || err)
+        setCalls([])
         setLoading(false)
       }
     }
