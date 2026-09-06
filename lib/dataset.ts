@@ -127,13 +127,32 @@ export function getLocalConversations(userId: string): DatasetConversation[] {
 
   try {
     const raw = localStorage.getItem(STORAGE_KEY_CONVERSATIONS)
-    if (!raw) return []
-    const all: DatasetConversation[] = JSON.parse(raw)
+    let all: DatasetConversation[] = raw ? JSON.parse(raw) : []
     const profiles = getKnownProfiles()
     const profileMap = new Map(profiles.map((p) => [p.id, p]))
 
-    return all
-      .filter((c) => c.participant_1_id === userId || c.participant_2_id === userId)
+    let userConvs = all.filter((c) => c.participant_1_id === userId || c.participant_2_id === userId)
+
+    // If user has no conversations yet, automatically connect with the other known user
+    if (userConvs.length === 0) {
+      const otherUser = profiles.find((p) => p.id !== userId)
+      if (otherUser) {
+        const autoConv: DatasetConversation = {
+          id: `conv_${userId}_${otherUser.id}`,
+          participant_1_id: userId,
+          participant_2_id: otherUser.id,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }
+        all.unshift(autoConv)
+        try {
+          localStorage.setItem(STORAGE_KEY_CONVERSATIONS, JSON.stringify(all))
+        } catch (e) {}
+        userConvs = [autoConv]
+      }
+    }
+
+    return userConvs
       .map((c) => ({
         ...c,
         participant_1: c.participant_1 || profileMap.get(c.participant_1_id),
