@@ -51,6 +51,7 @@ export default function ChatLayout({ user }: { user: User }) {
       if (
         event.type === "conversation_created" ||
         event.type === "message_inserted" ||
+        event.type === "user_updated" ||
         event.type === "heartbeat_poll"
       ) {
         loadConversations()

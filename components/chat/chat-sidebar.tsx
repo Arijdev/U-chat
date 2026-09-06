@@ -5,9 +5,10 @@ import { useState, useEffect } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { LogOut, Plus, Search, Zap, Clock, MessageSquare, UserCheck, Loader2 } from "lucide-react"
+import { LogOut, Plus, Search, Zap, Clock, MessageSquare, UserCheck, Loader2, Edit2 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { ThemeToggle } from "@/components/theme-toggle"
+import { ProfileModal } from "./profile-modal"
 import {
   apiGetUsers,
   apiCreateConversation,
@@ -47,6 +48,13 @@ export default function ChatSidebar({
   const [isSearching, setIsSearching] = useState(false)
   const [registeredUsers, setRegisteredUsers] = useState<ChatUser[]>([])
   const [loadingRegisteredUsers, setLoadingRegisteredUsers] = useState(false)
+  const [showProfileModal, setShowProfileModal] = useState(false)
+  const [currentDisplayName, setCurrentDisplayName] = useState(
+    user.user_metadata?.display_name || user.email?.split("@")[0] || "User"
+  )
+  const [currentStatus, setCurrentStatus] = useState(
+    user.user_metadata?.status || "Hey there! I am using WhatsApp."
+  )
   const router = useRouter()
 
   const handleLogout = async () => {
@@ -245,6 +253,26 @@ export default function ChatSidebar({
           </div>
         </div>
 
+        {/* Current User Profile Card - Click to Update Name & Status */}
+        <button
+          onClick={() => setShowProfileModal(true)}
+          className="flex items-center gap-2.5 p-2 rounded-xl bg-muted/40 hover:bg-muted/70 transition-colors w-full text-left cursor-pointer border border-border/50 group"
+          title="Click to update your display name and status"
+        >
+          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-semibold text-sm shrink-0 shadow-xs">
+            {currentDisplayName?.[0]?.toUpperCase() || user.email?.[0]?.toUpperCase() || "?"}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold text-foreground truncate group-hover:text-emerald-600 transition-colors">
+              {currentDisplayName}
+            </p>
+            <p className="text-[10px] text-muted-foreground truncate">{currentStatus}</p>
+          </div>
+          <div className="flex items-center gap-1 text-[10px] text-emerald-600 font-medium px-2 py-0.5 rounded-md bg-emerald-500/10">
+            <Edit2 className="w-3 h-3" /> Edit
+          </div>
+        </button>
+
         <div className="flex gap-2">
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -394,6 +422,23 @@ export default function ChatSidebar({
           })
         )}
       </div>
+
+      {showProfileModal && (
+        <ProfileModal
+          user={user}
+          currentProfile={{
+            id: user.id,
+            email: user.email || "",
+            display_name: currentDisplayName,
+            status: currentStatus,
+          }}
+          onClose={() => setShowProfileModal(false)}
+          onProfileUpdated={(updated) => {
+            setCurrentDisplayName(updated.display_name)
+            if (updated.status) setCurrentStatus(updated.status)
+          }}
+        />
+      )}
     </div>
   )
 }

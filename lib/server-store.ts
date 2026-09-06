@@ -141,7 +141,42 @@ export function registerServerUser(user: Partial<ServerUser> & { id: string; ema
   }
 
   saveStore()
+
+  // Broadcast to all active listeners that user profile was updated
+  sseListeners.forEach((listenerSet) => {
+    listenerSet.forEach((fn) => {
+      try {
+        fn({ type: "user_updated", payload: updated })
+      } catch (e) {}
+    })
+  })
+
   return updated
+}
+
+export function updateServerUserProfile(
+  userId: string,
+  updates: { display_name?: string; status?: string; avatar_url?: string }
+): ServerUser | null {
+  const user = store.users.find((u) => u.id === userId)
+  if (!user) return null
+
+  if (updates.display_name !== undefined) user.display_name = updates.display_name
+  if (updates.status !== undefined) user.status = updates.status
+  if (updates.avatar_url !== undefined) user.avatar_url = updates.avatar_url
+
+  saveStore()
+
+  // Broadcast to all active listeners that user profile was updated
+  sseListeners.forEach((listenerSet) => {
+    listenerSet.forEach((fn) => {
+      try {
+        fn({ type: "user_updated", payload: user })
+      } catch (e) {}
+    })
+  })
+
+  return user
 }
 
 export function getServerUsers(excludeId?: string): ServerUser[] {

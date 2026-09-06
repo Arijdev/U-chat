@@ -31,7 +31,7 @@ export interface ChatMessage {
   created_at: string
 }
 
-export async function apiRegisterUser(user: { id: string; email: string; display_name?: string; avatar_url?: string }): Promise<ChatUser> {
+export async function apiRegisterUser(user: { id: string; email: string; display_name?: string; avatar_url?: string; status?: string }): Promise<ChatUser> {
   try {
     const res = await fetch("/api/chat/users", {
       method: "POST",
@@ -41,6 +41,20 @@ export async function apiRegisterUser(user: { id: string; email: string; display
     return await res.json()
   } catch (e) {
     return user as ChatUser
+  }
+}
+
+export async function apiUpdateUserProfile(userId: string, updates: { display_name?: string; status?: string; avatar_url?: string }): Promise<ChatUser | null> {
+  try {
+    const res = await fetch("/api/chat/users", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: userId, ...updates }),
+    })
+    if (!res.ok) return null
+    return await res.json()
+  } catch (e) {
+    return null
   }
 }
 

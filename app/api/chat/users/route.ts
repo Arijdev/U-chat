@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { getServerUsers, registerServerUser } from "@/lib/server-store"
+import { getServerUsers, registerServerUser, updateServerUserProfile } from "@/lib/server-store"
 
 export const dynamic = "force-dynamic"
 
@@ -21,6 +21,26 @@ export async function POST(req: NextRequest) {
 
     const user = registerServerUser({ id, email, display_name, avatar_url })
     return NextResponse.json(user)
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 })
+  }
+}
+
+export async function PATCH(req: NextRequest) {
+  try {
+    const body = await req.json()
+    const { id, display_name, status, avatar_url } = body
+
+    if (!id) {
+      return NextResponse.json({ error: "Missing user id" }, { status: 400 })
+    }
+
+    const updated = updateServerUserProfile(id, { display_name, status, avatar_url })
+    if (!updated) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 })
+    }
+
+    return NextResponse.json(updated)
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }

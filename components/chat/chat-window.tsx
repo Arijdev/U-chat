@@ -177,6 +177,14 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
           break
         }
 
+        case "user_updated": {
+          const updated = event.payload
+          if (updated && otherUser && updated.id === otherUser.id) {
+            setOtherUser((prev: any) => ({ ...prev, ...updated }))
+          }
+          break
+        }
+
         case "signaling": {
           const sig = event.payload?.payload || event.payload
           if (sig) {
