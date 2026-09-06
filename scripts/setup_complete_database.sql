@@ -194,6 +194,17 @@ CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
+-- Backfill any users that registered before this script was executed
+INSERT INTO public.profiles (id, email, display_name, avatar_url, status)
+SELECT 
+  id,
+  email,
+  COALESCE(raw_user_meta_data->>'display_name', split_part(email, '@', 1)),
+  COALESCE(raw_user_meta_data->>'avatar_url', ''),
+  'offline'
+FROM auth.users
+ON CONFLICT (id) DO NOTHING;
+
 -- =====================================================================
 -- REALTIME SUBSCRIPTIONS
 -- =====================================================================
