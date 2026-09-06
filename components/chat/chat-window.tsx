@@ -18,6 +18,7 @@ import {
   Trash2,
   Search,
   Loader2,
+  ArrowLeft,
 } from "lucide-react"
 import { encryptMessage, decryptMessage } from "@/lib/encryption"
 import { VideoCallInterface } from "./video-call-interface"
@@ -37,9 +38,10 @@ import { getProfileById, getKnownProfiles } from "@/lib/dataset"
 interface ChatWindowProps {
   conversationId: string
   user: User
+  onBack?: () => void
 }
 
-export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
+export default function ChatWindow({ conversationId, user, onBack }: ChatWindowProps) {
   const [messages, setMessages] = useState<any[]>([])
   const [newMessage, setNewMessage] = useState("")
   const [loading, setLoading] = useState(true)
@@ -639,13 +641,26 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
       />
 
       {/* WhatsApp Header */}
-      <div className="border-b border-border/60 p-3 md:px-4 md:py-2.5 flex items-center justify-between bg-white dark:bg-[#202c33] shadow-xs z-10">
-        <div
-          onClick={() => setShowContactInfo(!showContactInfo)}
-          className="flex items-center gap-3 min-w-0 cursor-pointer hover:opacity-85 transition-opacity"
-          title="Click to view contact info"
-        >
-          <div className="relative shrink-0">
+      <div className="border-b border-border/60 p-2.5 md:px-4 md:py-2.5 flex items-center justify-between bg-white dark:bg-[#202c33] shadow-xs z-10">
+        <div className="flex items-center gap-2 min-w-0">
+          {onBack && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={onBack}
+              className="md:hidden p-1.5 h-9 w-9 rounded-full shrink-0 text-muted-foreground hover:text-foreground cursor-pointer"
+              title="Back to chats"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </Button>
+          )}
+
+          <div
+            onClick={() => setShowContactInfo(!showContactInfo)}
+            className="flex items-center gap-2.5 md:gap-3 min-w-0 cursor-pointer hover:opacity-85 transition-opacity"
+            title="Click to view contact info"
+          >
+            <div className="relative shrink-0">
             <div className="w-10 h-10 rounded-full overflow-hidden bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-semibold text-base shadow-xs">
               {otherUser?.avatar_url ? (
                 <img
@@ -668,8 +683,9 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
             </p>
           </div>
         </div>
+      </div>
 
-        {/* WhatsApp Call & Action Buttons */}
+      {/* WhatsApp Call & Action Buttons */}
         <div className="flex items-center gap-1 shrink-0">
           <Button
             size="sm"

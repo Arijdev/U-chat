@@ -54,12 +54,25 @@ export interface ServerSignaling {
   created_at: string
 }
 
+export interface ServerStory {
+  id: string
+  user_id: string
+  media_url?: string
+  text_content?: string
+  background_color?: string
+  caption?: string
+  created_at: string
+  expires_at: string
+  user?: ServerUser
+}
+
 interface StoreData {
   users: ServerUser[]
   conversations: ServerConversation[]
   messages: ServerMessage[]
   calls: ServerCall[]
   signaling: ServerSignaling[]
+  stories: ServerStory[]
 }
 
 const DATA_DIR = path.join(process.cwd(), ".uchat_data")
@@ -85,6 +98,7 @@ let store: StoreData = {
   messages: [],
   calls: [],
   signaling: [],
+  stories: [],
 }
 
 // Event listeners for SSE
@@ -339,6 +353,83 @@ export function addServerSignaling(sig: Omit<ServerSignaling, "id" | "created_at
 
   notifyUser(sig.to_id, { type: "signaling", payload: newSig })
   return newSig
+}
+
+// STORIES / STATUS
+export function getServerStories(): ServerStory[] {
+  const now = new Date().getTime()
+  const userMap = new Map(store.users.map((u) => [u.id, u]))
+
+  // Clean up expired stories (> 24h)
+  if (!store.stories) store.stories = []
+  store.stories = store.stories.filter((s) => new Date(s.expires_at).getTime() > now)
+
+  return store.stories
+    .map((s) => ({
+      ...s,
+      user: userMap.get(s.user_id) || {
+        id: s.user_id,
+        email: "user@example.com",
+        display_name: "Contact",
+      },
+    }))
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+}
+
+export function addServerStory(story: {
+  user_id: string
+  media_url?: string
+  text_content?: string
+  background_color?: string
+  caption?: string
+}): ServerStory {
+  if (!store.stories) store.stories = []
+
+  const newStory: ServerStory = {
+    id: `story_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    user_id: story.user_id,
+    media_url: story.media_url,
+    text_content: story.text_content,
+    background_color: story.background_color,
+    caption: story.caption,
+    created_at: new Date().toISOString(),
+    expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+  }
+
+  store.stories.unshift(newStory)
+  saveStore()
+
+  // Broadcast to all active users that a story was added
+  sseListeners.forEach((listenerSet) => {
+    listenerSet.forEach((fn) => {
+      try {
+        fn({ type: "story_created", payload: newStory })
+      } catch (e) {}
+    })
+  })
+
+  return newStory
+}
+
+export function deleteServerStory(storyId: string, userId: string): boolean {
+  if (!store.stories) return false
+
+  const initialLen = store.stories.length
+  store.stories = store.stories.filter((s) => s.id !== storyId || s.user_id !== userId)
+
+  if (store.stories.length !== initialLen) {
+    saveStore()
+    sseListeners.forEach((listenerSet) => {
+      listenerSet.forEach((fn) => {
+        try {
+          fn({ type: "story_deleted", payload: { storyId } })
+        } catch (e) {}
+      })
+    })
+    return true
+  }
+
+  return false
 }
 
 // REALTIME SSE NOTIFIER

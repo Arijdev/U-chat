@@ -63,22 +63,46 @@ export default function ChatLayout({ user }: { user: User }) {
     }
   }, [user.id, loadConversations])
 
+  const isDetailActive = Boolean(selectedConversation || showStories || showCallHistory)
+
   return (
-    <div className="flex flex-col md:flex-row h-screen bg-background text-foreground w-full overflow-hidden">
+    <div className="flex h-screen bg-background text-foreground w-full overflow-hidden">
       <ChatSidebar
         user={user}
         conversations={conversations}
         selectedConversation={selectedConversation}
-        onSelectConversation={setSelectedConversation}
-        onShowStories={() => setShowStories(true)}
-        onShowCallHistory={() => setShowCallHistory(true)}
+        onSelectConversation={(id) => {
+          setSelectedConversation(id)
+          setShowStories(false)
+          setShowCallHistory(false)
+        }}
+        onShowStories={() => {
+          setShowStories(true)
+          setShowCallHistory(false)
+        }}
+        onShowCallHistory={() => {
+          setShowCallHistory(true)
+          setShowStories(false)
+        }}
         loading={loading}
+        className={isDetailActive ? "hidden md:flex" : "flex"}
       />
 
       {showStories ? (
-        <StoriesView user={user} onClose={() => setShowStories(false)} />
+        <StoriesView
+          user={user}
+          onClose={() => setShowStories(false)}
+          onOpenChatWithContact={(convId) => {
+            setShowStories(false)
+            setSelectedConversation(convId)
+          }}
+        />
       ) : selectedConversation ? (
-        <ChatWindow conversationId={selectedConversation} user={user} />
+        <ChatWindow
+          conversationId={selectedConversation}
+          user={user}
+          onBack={() => setSelectedConversation(null)}
+        />
       ) : (
         <div className="flex-1 hidden md:flex items-center justify-center bg-gradient-to-br from-background via-muted/20 to-accent/10">
           <div className="text-center p-8 max-w-sm">
@@ -93,7 +117,11 @@ export default function ChatLayout({ user }: { user: User }) {
         </div>
       )}
 
-      {showCallHistory && <CallHistory user={user} onClose={() => setShowCallHistory(false)} />}
+      {showCallHistory && (
+        <div className="fixed inset-0 md:relative z-40 bg-background/80 md:bg-transparent flex justify-end">
+          <CallHistory user={user} onClose={() => setShowCallHistory(false)} />
+        </div>
+      )}
     </div>
   )
 }

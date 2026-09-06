@@ -172,3 +172,56 @@ export function connectChatStream(
     }
   }
 }
+
+export interface ChatStory {
+  id: string
+  user_id: string
+  media_url?: string
+  text_content?: string
+  background_color?: string
+  caption?: string
+  created_at: string
+  expires_at: string
+  user?: ChatUser
+}
+
+export async function apiGetStories(): Promise<ChatStory[]> {
+  try {
+    const res = await fetch("/api/chat/stories")
+    if (!res.ok) return []
+    return await res.json()
+  } catch (e) {
+    return []
+  }
+}
+
+export async function apiCreateStory(story: {
+  user_id: string
+  media_url?: string
+  text_content?: string
+  background_color?: string
+  caption?: string
+}): Promise<ChatStory | null> {
+  try {
+    const res = await fetch("/api/chat/stories", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(story),
+    })
+    if (!res.ok) return null
+    return await res.json()
+  } catch (e) {
+    return null
+  }
+}
+
+export async function apiDeleteStory(storyId: string, userId: string): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/chat/stories?storyId=${encodeURIComponent(storyId)}&userId=${encodeURIComponent(userId)}`, {
+      method: "DELETE",
+    })
+    return res.ok
+  } catch (e) {
+    return false
+  }
+}

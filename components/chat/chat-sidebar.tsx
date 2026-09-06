@@ -30,6 +30,7 @@ interface ChatSidebarProps {
   onShowStories: () => void
   onShowCallHistory: () => void
   loading: boolean
+  className?: string
 }
 
 export default function ChatSidebar({
@@ -40,6 +41,7 @@ export default function ChatSidebar({
   onShowStories,
   onShowCallHistory,
   loading,
+  className,
 }: ChatSidebarProps) {
   const [searchQuery, setSearchQuery] = useState("")
   const [showNewChat, setShowNewChat] = useState(false)
@@ -230,7 +232,7 @@ export default function ChatSidebar({
   })
 
   return (
-    <div className="w-full md:w-80 bg-card border-r border-border flex flex-col shrink-0">
+    <div className={`w-full md:w-80 bg-card border-r border-border flex flex-col shrink-0 h-full overflow-hidden ${className || ""}`}>
       {/* Header */}
       <div className="p-4 border-b border-border space-y-3">
         <div className="flex items-center justify-between">
