@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, memo } from "react"
 import { Trash2 } from "lucide-react"
 
 interface MessageBubbleProps {
@@ -10,7 +10,12 @@ interface MessageBubbleProps {
   onDelete: (id: string) => void
 }
 
-export function MessageBubble({ msg, isOwn, onGetDecrypted, onDelete }: MessageBubbleProps) {
+export const MessageBubble = memo(function MessageBubble({
+  msg,
+  isOwn,
+  onGetDecrypted,
+  onDelete,
+}: MessageBubbleProps) {
   const [content, setContent] = useState(msg.content)
 
   useEffect(() => {
@@ -49,4 +54,4 @@ export function MessageBubble({ msg, isOwn, onGetDecrypted, onDelete }: MessageB
       </div>
     </div>
   )
-}
+})

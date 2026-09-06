@@ -2,11 +2,11 @@
 
 import type React from "react"
 import type { User } from "@supabase/supabase-js"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, useCallback } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Send, Phone, PhoneOff, Video, Share2, ImageIcon, Smile, MoreVertical, X } from "lucide-react"
+import { Send, Phone, PhoneOff, Video, Share2, ImageIcon, Smile, MoreVertical, X, Loader2 } from "lucide-react"
 import { encryptMessage, decryptMessage } from "@/lib/encryption"
 import { VideoCallInterface } from "./video-call-interface"
 import { MessageBubble } from "./message-bubble"
@@ -21,14 +21,19 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
   const [messages, setMessages] = useState<any[]>([])
   const [newMessage, setNewMessage] = useState("")
   const [loading, setLoading] = useState(true)
+  const [hasMoreMessages, setHasMoreMessages] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [otherUser, setOtherUser] = useState<any>(null)
   const [backgroundColor, setBackgroundColor] = useState("#ffffff")
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
   const [photoFile, setPhotoFile] = useState<File | null>(null)
   const [showCallModal, setShowCallModal] = useState(false)
-  const [callType, setCallType] = useState<"voice" | "video" | null>(null)
+  const [callType, setCallType] = useState<"voice" | "video">("voice")
+  const [callStatus, setCallStatus] = useState<"ringing" | "connected" | "ended">("ringing")
   const [callDuration, setCallDuration] = useState(0)
+  const [isMuted, setIsMuted] = useState(false)
+  const [isVideoOn, setIsVideoOn] = useState(true)
   const [incomingCall, setIncomingCall] = useState<{
     callerId: string
     callerName: string
@@ -53,27 +58,36 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }
 
+  const prevCountRef = useRef(0)
   useEffect(() => {
-    scrollToBottom()
-  }, [messages])
-
-  const getDecryptedContent = async (msg: any): Promise<string> => {
-    if (!msg.is_encrypted) return msg.content
-
-    const cacheKey = msg.id
-    if (decryptedMessagesRef.current.has(cacheKey)) {
-      return decryptedMessagesRef.current.get(cacheKey) || msg.content
+    if (messages.length > prevCountRef.current) {
+      if (prevCountRef.current === 0 || messages[messages.length - 1]?.sender_id === user.id) {
+        scrollToBottom()
+      }
     }
+    prevCountRef.current = messages.length
+  }, [messages, user.id])
 
-    try {
-      const decrypted = await decryptMessage(msg.content, conversationId)
-      decryptedMessagesRef.current.set(cacheKey, decrypted)
-      return decrypted
-    } catch (err) {
-      console.log(" Decryption error:", err)
-      return msg.content
-    }
-  }
+  const getDecryptedContent = useCallback(
+    async (msg: any): Promise<string> => {
+      if (!msg.is_encrypted) return msg.content
+
+      const cacheKey = msg.id
+      if (decryptedMessagesRef.current.has(cacheKey)) {
+        return decryptedMessagesRef.current.get(cacheKey) || msg.content
+      }
+
+      try {
+        const decrypted = await decryptMessage(msg.content, conversationId)
+        decryptedMessagesRef.current.set(cacheKey, decrypted)
+        return decrypted
+      } catch (err) {
+        console.log(" Decryption error:", err)
+        return msg.content
+      }
+    },
+    [conversationId],
+  )
 
   useEffect(() => {
     const loadConversationAndMessages = async () => {
@@ -100,13 +114,16 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
         .from("messages")
         .select("*")
         .eq("conversation_id", conversationId)
-        .order("created_at", { ascending: true })
+        .order("created_at", { ascending: false })
+        .limit(50)
 
       if (msgError) {
         console.log(" Error loading messages:", msgError)
       } else {
-        console.log(" Loaded messages:", data?.length || 0)
-        setMessages(data || [])
+        const sorted = (data || []).reverse()
+        console.log(" Loaded messages:", sorted.length)
+        setMessages(sorted)
+        setHasMoreMessages((data?.length || 0) === 50)
       }
       setLoading(false)
 
@@ -402,7 +419,35 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
     }
   }
 
-  const handleDeleteMessage = async (messageId: string) => {
+  const loadEarlierMessages = async () => {
+    if (loadingMore || messages.length === 0) return
+    setLoadingMore(true)
+    const oldestMessage = messages[0]
+    const supabase = createClient()
+    try {
+      const { data, error } = await supabase
+        .from("messages")
+        .select("*")
+        .eq("conversation_id", conversationId)
+        .lt("created_at", oldestMessage.created_at)
+        .order("created_at", { ascending: false })
+        .limit(50)
+
+      if (error) {
+        console.error("Error loading earlier messages:", error)
+      } else if (data) {
+        const olderSorted = data.reverse()
+        setMessages((prev) => [...olderSorted, ...prev])
+        setHasMoreMessages(data.length === 50)
+      }
+    } catch (err) {
+      console.error("Exception loading earlier messages:", err)
+    } finally {
+      setLoadingMore(false)
+    }
+  }
+
+  const handleDeleteMessage = useCallback(async (messageId: string) => {
     const supabase = createClient()
 
     try {
@@ -418,7 +463,7 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
       console.log(" Error in handleDeleteMessage:", err)
       alert("Error deleting message")
     }
-  }
+  }, [])
 
   const handleBackgroundChange = (color: string) => {
     setBackgroundColor(color)
@@ -775,6 +820,25 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-3 md:p-4 space-y-4" style={{ backgroundColor }}>
+        {hasMoreMessages && (
+          <div className="flex justify-center pt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={loadingMore}
+              onClick={loadEarlierMessages}
+              className="text-xs bg-gray-900/5 hover:bg-gray-900/10 text-gray-600 border-gray-300 rounded-full px-4 h-7"
+            >
+              {loadingMore ? (
+                <>
+                  <Loader2 className="w-3 h-3 mr-1 animate-spin" /> Loading...
+                </>
+              ) : (
+                "Load earlier messages"
+              )}
+            </Button>
+          </div>
+        )}
         {loading ? (
           <div className="text-center text-gray-500">Loading messages...</div>
         ) : messages.length === 0 ? (

@@ -1,4 +1,23 @@
-// Web Crypto API is available in all modern browsers
+// Web Crypto API is available in all modern browsers and Node 18+
+
+function bufferToBase64(bytes: Uint8Array): string {
+  let binary = ""
+  const chunkSize = 0x8000 // 32KB chunks to prevent call stack overflow
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize)
+    binary += String.fromCharCode.apply(null, chunk as unknown as number[])
+  }
+  return btoa(binary)
+}
+
+function base64ToBuffer(base64: string): Uint8Array {
+  const binary = atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i)
+  }
+  return bytes
+}
 
 export async function encryptMessage(message: string, conversationId: string): Promise<string> {
   try {
@@ -20,18 +39,18 @@ export async function encryptMessage(message: string, conversationId: string): P
     combined.set(iv)
     combined.set(new Uint8Array(encrypted), iv.length)
 
-    // Convert to base64 for storage
-    return btoa(String.fromCharCode(...combined))
+    // Convert to base64 safely
+    return bufferToBase64(combined)
   } catch (error) {
-    console.error(" Encryption error:", error)
+    console.error("Encryption error:", error)
     return message // Fallback to plain text if encryption fails
   }
 }
 
 export async function decryptMessage(encryptedMessage: string, conversationId: string): Promise<string> {
   try {
-    // Convert from base64
-    const combined = Uint8Array.from(atob(encryptedMessage), (c) => c.charCodeAt(0))
+    // Convert from base64 safely
+    const combined = base64ToBuffer(encryptedMessage)
 
     // Extract IV and encrypted data
     const iv = combined.slice(0, 12)
@@ -49,7 +68,7 @@ export async function decryptMessage(encryptedMessage: string, conversationId: s
     const decoder = new TextDecoder()
     return decoder.decode(decrypted)
   } catch (error) {
-    console.error(" Decryption error:", error)
-    return encryptedMessage // Return encrypted if decryption fails
+    // If decryption fails (e.g. plain text message from earlier or system message), return original
+    return encryptedMessage
   }
 }

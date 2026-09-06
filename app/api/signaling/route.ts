@@ -1,34 +1,32 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createClient as createAdminClient } from '@supabase/supabase-js'
+import { createClient as createServerClient } from '@/lib/supabase/server'
+import { getSupabaseUrl, getSupabaseAnonKey, getSupabaseServiceRoleKey } from '@/lib/env'
 
 export async function POST(req: Request) {
   try {
+    // 1. Authenticate the caller session
+    const serverClient = await createServerClient()
+    const {
+      data: { user },
+    } = await serverClient.auth.getUser()
+
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized: authentication required' }, { status: 401 })
+    }
+
     const body = await req.json()
     const { conversationId, from, to, type, payload, callType, fromName, sdp, candidate } = body
 
-    // Use the same env vars as set in Vercel
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-    if (!url || !serviceKey) {
-      console.error('[api/signaling] Missing env vars:', { 
-        hasUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
-        hasServiceKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY
-      })
-      return NextResponse.json({ 
-        error: 'Server misconfigured: Check NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY',
-        debug: {
-          url: !!url,
-          key: !!serviceKey
-        }
-      }, { status: 500 })
+    // Verify sender matches the authenticated user to prevent spoofing
+    const senderId = from || user.id
+    if (senderId !== user.id) {
+      return NextResponse.json({ error: 'Forbidden: sender ID mismatch' }, { status: 403 })
     }
-
-    const supabase = createClient(url, serviceKey)
 
     const insert = {
       conversation_id: conversationId || null,
-      from_id: from || null,
+      from_id: senderId,
       to_id: to || null,
       type: type || null,
       payload: payload || null,
@@ -38,16 +36,30 @@ export async function POST(req: Request) {
       from_name: fromName || null,
     }
 
-    const { data, error } = await supabase.from('webrtc_signaling').insert(insert).select()
+    const serviceKey = getSupabaseServiceRoleKey()
+    const url = getSupabaseUrl()
+    const anonKey = getSupabaseAnonKey()
 
-    if (error) {
-      console.error('[api/signaling] insert error', error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
+    // 2. Insert via Service Role if provided, otherwise via the authenticated server client
+    if (serviceKey && url) {
+      const adminClient = createAdminClient(url, serviceKey)
+      const { data, error } = await adminClient.from('webrtc_signaling').insert(insert).select()
+      if (error) {
+        console.error('[api/signaling] admin insert error:', error.message)
+        return NextResponse.json({ error: error.message }, { status: 500 })
+      }
+      return NextResponse.json({ ok: true, row: data?.[0] || null })
+    } else {
+      // Fallback to authenticated user client
+      const { data, error } = await serverClient.from('webrtc_signaling').insert(insert).select()
+      if (error) {
+        console.error('[api/signaling] server client insert error:', error.message)
+        return NextResponse.json({ error: error.message }, { status: 500 })
+      }
+      return NextResponse.json({ ok: true, row: data?.[0] || null })
     }
-
-    return NextResponse.json({ ok: true, row: data && data[0] ? data[0] : null })
-  } catch (err) {
-    console.error('[api/signaling] unexpected error', err)
-    return NextResponse.json({ error: 'unexpected error' }, { status: 500 })
+  } catch (err: any) {
+    console.error('[api/signaling] unexpected error:', err)
+    return NextResponse.json({ error: err?.message || 'unexpected error' }, { status: 500 })
   }
 }
