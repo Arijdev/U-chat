@@ -19,6 +19,23 @@ export default function ChatLayout({ user }: { user: User }) {
     const loadConversations = async () => {
       const supabase = createClient()
 
+      // Ensure current user profile is synced in public.profiles
+      try {
+        await supabase.from("profiles").upsert(
+          {
+            id: user.id,
+            email: user.email,
+            display_name: user.user_metadata?.display_name || user.email?.split("@")[0] || "User",
+            avatar_url: user.user_metadata?.avatar_url || "",
+            status: "online",
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "id" }
+        )
+      } catch (err) {
+        console.warn("Could not sync current profile:", err)
+      }
+
       const { data: convData, error: convError } = await supabase
         .from("conversations")
         .select("*")
