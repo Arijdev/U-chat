@@ -120,48 +120,48 @@ export default function CallHistory({ user, onClose }: CallHistoryProps) {
   }
 
   return (
-    <div className="w-80 bg-white border-l border-gray-200 flex flex-col">
+    <div className="w-80 bg-card border-l border-border flex flex-col shrink-0 text-card-foreground">
       {/* Header */}
-      <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-        <h2 className="text-lg font-bold text-gray-900">Call History</h2>
-        <Button size="sm" variant="ghost" onClick={onClose} className="text-gray-600 hover:text-red-600">
-          <X className="w-5 h-5" />
+      <div className="p-4 border-b border-border flex items-center justify-between">
+        <h2 className="text-base font-bold text-foreground">Call History</h2>
+        <Button size="sm" variant="ghost" onClick={onClose} className="text-muted-foreground hover:text-foreground h-8 w-8 p-0 rounded-lg">
+          <X className="w-4 h-4" />
         </Button>
       </div>
 
       {/* Calls List */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto divide-y divide-border/40">
         {loading ? (
-          <div className="p-4 text-center text-gray-500">Loading...</div>
+          <div className="p-6 text-center text-sm text-muted-foreground">Loading...</div>
         ) : calls.length === 0 ? (
-          <div className="p-4 text-center text-gray-500">No call history</div>
+          <div className="p-6 text-center text-sm text-muted-foreground">No call history</div>
         ) : (
           calls.map((call) => {
             const otherUser = call.caller_id === user.id ? call.receiver : call.caller
             const isOutgoing = call.caller_id === user.id
 
             return (
-              <div key={call.id} className="p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors">
+              <div key={call.id} className="p-3.5 hover:bg-muted/40 transition-colors">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-linear-to-br from-blue-400 to-indigo-600 rounded-full flex items-center justify-center text-white font-semibold shrink-0">
+                  <div className="w-10 h-10 bg-linear-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white font-semibold text-sm shrink-0 shadow-xs">
                     {otherUser?.display_name?.[0]?.toUpperCase() || "?"}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-gray-900 truncate">{otherUser?.display_name}</p>
-                    <div className="flex items-center gap-1 text-sm text-gray-500">
-                      {call.call_type === "video" ? <Video className="w-4 h-4" /> : <Phone className="w-4 h-4" />}
+                    <p className="font-semibold text-sm text-foreground truncate">{otherUser?.display_name || "User"}</p>
+                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                      {call.call_type === "video" ? <Video className="w-3.5 h-3.5 text-blue-500" /> : <Phone className="w-3.5 h-3.5 text-green-500" />}
                       <span>{isOutgoing ? "Outgoing" : "Incoming"}</span>
                     </div>
                   </div>
                   <div className="text-right shrink-0">
-                    <div className="flex items-center gap-1 text-sm text-gray-600">
-                      <Clock className="w-4 h-4" />
+                    <div className="flex items-center gap-1 text-xs text-muted-foreground justify-end">
+                      <Clock className="w-3 h-3" />
                       <span>{formatDuration(call.duration_seconds)}</span>
                     </div>
-                    <p className="text-xs text-gray-400">{new Date(call.created_at).toLocaleDateString()}</p>
-                    <div className="mt-2">
-                      <Button size="sm" variant="ghost" onClick={() => handleDeleteCall(call.id)} className="text-red-600 hover:text-red-700">
-                        <Trash2 className="w-4 h-4" />
+                    <p className="text-[11px] text-muted-foreground/70">{new Date(call.created_at).toLocaleDateString()}</p>
+                    <div className="mt-1">
+                      <Button size="sm" variant="ghost" onClick={() => handleDeleteCall(call.id)} className="text-muted-foreground hover:text-destructive h-7 w-7 p-0" title="Delete record">
+                        <Trash2 className="w-3.5 h-3.5" />
                       </Button>
                     </div>
                   </div>

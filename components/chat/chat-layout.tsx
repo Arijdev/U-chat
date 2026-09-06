@@ -84,7 +84,7 @@ export default function ChatLayout({ user }: { user: User }) {
   }, [user.id])
 
   return (
-    <div className="flex flex-col md:flex-row h-screen bg-gray-50 w-full">
+    <div className="flex flex-col md:flex-row h-screen bg-background text-foreground w-full overflow-hidden">
       <ChatSidebar
         user={user}
         conversations={conversations}
@@ -100,11 +100,13 @@ export default function ChatLayout({ user }: { user: User }) {
       ) : selectedConversation ? (
         <ChatWindow conversationId={selectedConversation} user={user} />
       ) : (
-          <div className="flex-1 flex items-center justify-center bg-linear-to-br from-blue-50 to-indigo-100 md:flex">
-          <div className="text-center">
-            <div className="text-6xl mb-4">💬</div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">Select a conversation</h2>
-            <p className="text-gray-600">Choose a chat to start messaging</p>
+        <div className="flex-1 hidden md:flex items-center justify-center bg-gradient-to-br from-background via-muted/20 to-accent/10">
+          <div className="text-center p-8 max-w-sm">
+            <div className="w-16 h-16 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mx-auto mb-4 text-3xl shadow-xs">
+              💬
+            </div>
+            <h2 className="text-xl font-bold text-foreground mb-1">Select a conversation</h2>
+            <p className="text-sm text-muted-foreground">Choose a contact from the sidebar or start a new chat to begin messaging.</p>
           </div>
         </div>
       )}

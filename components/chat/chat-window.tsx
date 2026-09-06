@@ -24,7 +24,7 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
   const [hasMoreMessages, setHasMoreMessages] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [otherUser, setOtherUser] = useState<any>(null)
-  const [backgroundColor, setBackgroundColor] = useState("#ffffff")
+  const [backgroundColor, setBackgroundColor] = useState<string | null>(null)
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
   const [photoFile, setPhotoFile] = useState<File | null>(null)
@@ -465,7 +465,7 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
     }
   }, [])
 
-  const handleBackgroundChange = (color: string) => {
+  const handleBackgroundChange = (color: string | null) => {
     setBackgroundColor(color)
   }
 
@@ -653,25 +653,25 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
   }
 
   return (
-    <div className="flex-1 flex flex-col bg-white">
+    <div className="flex-1 flex flex-col bg-background">
       {/* Header */}
-        <div className="border-b border-gray-200 p-3 md:p-4 flex items-center justify-between bg-linear-to-r from-blue-50 to-indigo-50">
+      <div className="border-b border-border p-3 md:p-4 flex items-center justify-between bg-card/70 backdrop-blur-xs">
         <div className="flex items-center gap-2 md:gap-3 min-w-0">
-          <div className="w-8 md:w-10 h-8 md:h-10 bg-linear-to-br from-blue-400 to-indigo-600 rounded-full flex items-center justify-center text-white font-semibold text-sm md:text-base shrink-0">
+          <div className="w-8 md:w-10 h-8 md:h-10 bg-linear-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white font-semibold text-sm md:text-base shrink-0 shadow-xs">
             {otherUser?.display_name?.[0]?.toUpperCase() || "?"}
           </div>
           <div className="min-w-0">
-            <p className="font-semibold text-gray-900 text-sm md:text-base truncate">
+            <p className="font-semibold text-foreground text-sm md:text-base truncate">
               {otherUser?.display_name || "Loading..."}
             </p>
-            <p className="text-xs md:text-sm text-gray-500 truncate">{otherUser?.email || ""}</p>
+            <p className="text-xs md:text-sm text-muted-foreground truncate">{otherUser?.email || ""}</p>
           </div>
         </div>
-          <div className="flex gap-1 md:gap-2 shrink-0">
+        <div className="flex gap-1 md:gap-2 shrink-0">
           <Button
             size="sm"
             variant="ghost"
-            className="text-gray-600 hover:text-blue-600 h-8 md:h-10 w-8 md:w-10 p-0"
+            className="text-muted-foreground hover:text-primary hover:bg-muted h-8 md:h-10 w-8 md:w-10 p-0"
             onClick={() => handleCall("voice")}
             title="Voice Call"
           >
@@ -680,7 +680,7 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
           <Button
             size="sm"
             variant="ghost"
-            className="text-gray-600 hover:text-blue-600 h-8 md:h-10 w-8 md:w-10 p-0"
+            className="text-muted-foreground hover:text-primary hover:bg-muted h-8 md:h-10 w-8 md:w-10 p-0"
             onClick={() => handleCall("video")}
             title="Video Call"
           >
@@ -689,26 +689,37 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
           <Button
             size="sm"
             variant="ghost"
-            className="text-gray-600 hover:text-blue-600 h-8 md:h-10 w-8 md:w-10 p-0"
+            className="text-muted-foreground hover:text-primary hover:bg-muted h-8 md:h-10 w-8 md:w-10 p-0"
+            onClick={() => handleCall("video")}
             title="Screen Share"
           >
             <Share2 className="w-4 md:w-5 h-4 md:h-5" />
           </Button>
           <div className="relative group">
-            <Button size="sm" variant="ghost" className="text-gray-600 hover:text-blue-600 h-8 md:h-10 w-8 md:w-10 p-0">
+            <Button size="sm" variant="ghost" className="text-muted-foreground hover:text-primary hover:bg-muted h-8 md:h-10 w-8 md:w-10 p-0">
               <MoreVertical className="w-4 md:w-5 h-4 md:h-5" />
             </Button>
-            <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-opacity z-10">
+            <div className="absolute right-0 mt-2 w-52 bg-card rounded-xl shadow-xl border border-border opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-opacity z-10">
               <div className="p-3">
-                <p className="text-sm font-semibold text-gray-900 mb-2">Chat Background</p>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs font-semibold text-foreground">Chat Background</p>
+                  {backgroundColor && (
+                    <button
+                      onClick={() => handleBackgroundChange(null)}
+                      className="text-[10px] text-primary hover:underline"
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
                 <div className="grid grid-cols-4 gap-2">
-                  {["#ffffff", "#f0f9ff", "#f0fdf4", "#fef3c7", "#fecaca", "#e0e7ff", "#dbeafe", "#d1fae5"].map(
+                  {["#ffffff", "#f0f9ff", "#f0fdf4", "#fef3c7", "#fecaca", "#e0e7ff", "#1e293b", "#0f172a"].map(
                     (color) => (
                       <button
                         key={color}
                         onClick={() => handleBackgroundChange(color)}
-                        className={`w-8 h-8 rounded border-2 transition-colors ${
-                          backgroundColor === color ? "border-blue-600" : "border-gray-300 hover:border-blue-600"
+                        className={`w-8 h-8 rounded-lg border-2 transition-colors cursor-pointer ${
+                          backgroundColor === color ? "border-blue-600 ring-2 ring-blue-500/30" : "border-border hover:border-blue-500"
                         }`}
                         style={{ backgroundColor: color }}
                         title={color}
@@ -724,12 +735,12 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
 
       {/* Caller ringing modal */}
       {showCallModal && !activeCall && (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 md:p-8 text-center max-w-sm mx-4">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50">
+          <div className="bg-card border border-border text-card-foreground rounded-2xl p-6 md:p-8 text-center max-w-sm mx-4 shadow-2xl">
             <div className="text-5xl md:text-6xl mb-4">{callType === "video" ? "📹" : "📞"}</div>
-            <p className="text-lg font-semibold mb-2">Calling...</p>
-            <p className="text-gray-600 mb-4">{otherUser?.display_name || "User"}</p>
-            <p className="text-2xl font-bold text-blue-600 mb-6">
+            <p className="text-lg font-semibold mb-1">Calling...</p>
+            <p className="text-muted-foreground text-sm mb-4">{otherUser?.display_name || "User"}</p>
+            <p className="text-2xl font-bold text-primary mb-6">
               {Math.floor(callDuration / 60)}:{String(callDuration % 60).padStart(2, "0")}
             </p>
             <Button
@@ -738,7 +749,7 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
                 if (callTimerRef.current) clearInterval(callTimerRef.current)
                 handleEndCall()
               }}
-              className="w-full bg-red-600 hover:bg-red-700 text-white"
+              className="w-full bg-destructive hover:bg-destructive/90 text-destructive-foreground font-medium rounded-xl"
             >
               End Call
             </Button>
@@ -749,14 +760,14 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
       {/* Incoming call banner (non-blocking, like WhatsApp) */}
       {incomingCall && (
         <div className="fixed top-4 right-4 z-50 pointer-events-auto">
-          <div className="w-72 bg-white/95 backdrop-blur-sm rounded-lg shadow-lg border border-gray-200 overflow-hidden">
-            <div className="flex items-center gap-3 p-3">
-              <div className="w-12 h-12 rounded-full bg-linear-to-br from-blue-400 to-indigo-600 flex items-center justify-center text-white font-semibold text-lg">
+          <div className="w-80 bg-card/95 backdrop-blur-md rounded-2xl shadow-2xl border border-border overflow-hidden text-card-foreground">
+            <div className="flex items-center gap-3 p-3.5">
+              <div className="w-12 h-12 rounded-full bg-linear-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-semibold text-lg shrink-0 shadow-xs">
                 {incomingCall.callerName?.[0]?.toUpperCase() || "?"}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-gray-900 truncate">{incomingCall.callerName}</p>
-                <p className="text-xs text-gray-500 truncate">Incoming {incomingCall.callType} call</p>
+                <p className="text-sm font-semibold text-foreground truncate">{incomingCall.callerName}</p>
+                <p className="text-xs text-muted-foreground truncate">Incoming {incomingCall.callType} call</p>
               </div>
               <div className="flex items-center gap-2">
                 <Button onClick={handleAcceptCall} className="w-10 h-10 rounded-full bg-green-600 hover:bg-green-700 text-white p-0 flex items-center justify-center">
@@ -767,8 +778,8 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
                 </Button>
               </div>
             </div>
-            <div className="px-3 pb-3">
-              <Button variant="ghost" size="sm" className="w-full text-left text-xs text-gray-500" onClick={() => setIncomingCall(null)}>
+            <div className="px-3.5 pb-2.5">
+              <Button variant="ghost" size="sm" className="w-full text-left text-xs text-muted-foreground hover:text-foreground" onClick={() => setIncomingCall(null)}>
                 Dismiss
               </Button>
             </div>
@@ -797,20 +808,20 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
 
       {/* Photo Preview Modal */}
       {photoPreview && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-4 md:p-6 max-w-md mx-4">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50">
+          <div className="bg-card border border-border text-card-foreground rounded-2xl p-4 md:p-6 max-w-md mx-4 shadow-2xl">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold">Preview Photo</h3>
-              <button onClick={() => setPhotoPreview(null)} className="text-gray-500 hover:text-gray-700">
+              <h3 className="text-base font-semibold text-foreground">Preview Photo</h3>
+              <button onClick={() => setPhotoPreview(null)} className="text-muted-foreground hover:text-foreground">
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <img src={photoPreview || "/placeholder.svg"} alt="Preview" className="w-full rounded mb-4" />
+            <img src={photoPreview || "/placeholder.svg"} alt="Preview" className="w-full rounded-xl mb-4 max-h-[60vh] object-contain bg-black/20" />
             <div className="flex gap-2">
-              <Button onClick={handleSendPhoto} className="flex-1 bg-blue-600 hover:bg-blue-700">
+              <Button onClick={handleSendPhoto} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white rounded-xl">
                 Send Photo
               </Button>
-              <Button onClick={() => setPhotoPreview(null)} variant="outline" className="flex-1">
+              <Button onClick={() => setPhotoPreview(null)} variant="outline" className="flex-1 rounded-xl border-border">
                 Cancel
               </Button>
             </div>
@@ -819,7 +830,10 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
       )}
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-3 md:p-4 space-y-4" style={{ backgroundColor }}>
+      <div
+        className="flex-1 overflow-y-auto p-3 md:p-4 space-y-4 bg-background/50"
+        style={backgroundColor ? { backgroundColor } : undefined}
+      >
         {hasMoreMessages && (
           <div className="flex justify-center pt-2">
             <Button
@@ -827,7 +841,7 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
               size="sm"
               disabled={loadingMore}
               onClick={loadEarlierMessages}
-              className="text-xs bg-gray-900/5 hover:bg-gray-900/10 text-gray-600 border-gray-300 rounded-full px-4 h-7"
+              className="text-xs bg-muted/60 hover:bg-muted text-muted-foreground border-border rounded-full px-4 h-7 cursor-pointer"
             >
               {loadingMore ? (
                 <>
@@ -840,11 +854,11 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
           </div>
         )}
         {loading ? (
-          <div className="text-center text-gray-500">Loading messages...</div>
+          <div className="text-center text-sm text-muted-foreground pt-4">Loading messages...</div>
         ) : messages.length === 0 ? (
-          <div className="text-center text-gray-500 mt-8">
-            <p className="text-lg">No messages yet</p>
-            <p className="text-sm">Start the conversation!</p>
+          <div className="text-center text-muted-foreground mt-8 space-y-1">
+            <p className="text-base font-medium text-foreground">No messages yet</p>
+            <p className="text-xs">Start the conversation!</p>
           </div>
         ) : (
           messages.map((msg) => (
@@ -861,12 +875,12 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
       </div>
 
       {/* Input */}
-      <div className="border-t border-gray-200 p-2 md:p-4 bg-white">
-        <div className="flex gap-1 md:gap-2">
+      <div className="border-t border-border p-2 md:p-4 bg-card/90 backdrop-blur-xs">
+        <div className="flex gap-1 md:gap-2 items-center">
           <Button
             size="sm"
             variant="ghost"
-            className="text-gray-600 hover:text-blue-600 h-8 md:h-10 w-8 md:w-10 p-0 shrink-0"
+            className="text-muted-foreground hover:text-primary hover:bg-muted h-8 md:h-10 w-8 md:w-10 p-0 shrink-0 rounded-lg"
             onClick={() => fileInputRef.current?.click()}
             title="Send Photo"
           >
@@ -878,7 +892,7 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
             <Button
               size="sm"
               variant="ghost"
-              className="text-gray-600 hover:text-blue-600 h-8 md:h-10 w-8 md:w-10 p-0"
+              className="text-muted-foreground hover:text-primary hover:bg-muted h-8 md:h-10 w-8 md:w-10 p-0 shrink-0 rounded-lg"
               onClick={() => setShowEmojiPicker(!showEmojiPicker)}
               title="Emoji"
             >
@@ -886,15 +900,14 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
             </Button>
             {showEmojiPicker && (
               <>
-                {/* Transparent overlay — clicking outside the picker closes it */}
                 <div className="fixed inset-0 z-40" onClick={() => setShowEmojiPicker(false)} />
-                <div className="absolute bottom-full left-0 mb-2 bg-white border border-gray-200 rounded-lg shadow-lg p-3 z-50 w-max">
+                <div className="absolute bottom-full left-0 mb-2 bg-card border border-border rounded-2xl shadow-2xl p-3 z-50 w-max">
                   <div className="grid grid-cols-5 gap-2">
                     {emojis.map((emoji) => (
                       <button
                         key={emoji}
                         onClick={() => addEmoji(emoji)}
-                        className="text-2xl hover:bg-gray-100 p-2 rounded transition-colors cursor-pointer"
+                        className="text-2xl hover:bg-muted p-2 rounded-xl transition-colors cursor-pointer"
                       >
                         {emoji}
                       </button>
@@ -906,16 +919,16 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
           </div>
 
           <Input
-            placeholder="Type a message..."
+            placeholder="Type an encrypted message..."
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
-            onKeyPress={(e) => e.key === "Enter" && handleSendMessage()}
-            className="flex-1 border-gray-300 text-sm md:text-base h-8 md:h-10"
+            onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
+            className="flex-1 bg-background border-border text-foreground placeholder:text-muted-foreground text-sm md:text-base h-8 md:h-10 rounded-xl"
           />
           <Button
             onClick={handleSendMessage}
             disabled={!newMessage.trim()}
-            className="bg-blue-600 hover:bg-blue-700 text-white h-8 md:h-10 px-3 md:px-4 shrink-0"
+            className="bg-blue-600 hover:bg-blue-700 text-white h-8 md:h-10 px-3 md:px-4 shrink-0 rounded-xl"
           >
             <Send className="w-4 md:w-5 h-4 md:h-5" />
           </Button>
