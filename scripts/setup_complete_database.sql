@@ -242,6 +242,6 @@ BEGIN
   END;
 END $$;
 
--- Grant permissions to authenticated role
-GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticated;
-GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO authenticated;
+-- Grant permissions to authenticated and anon roles
+GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticated, anon, service_role;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO authenticated, anon, service_role;

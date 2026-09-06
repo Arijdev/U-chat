@@ -5,7 +5,7 @@ import { useState, useEffect } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { LogOut, Plus, Search, Zap, Clock, MessageSquare, UserCheck, Loader2 } from "lucide-react"
+import { LogOut, Plus, Search, Zap, Clock, MessageSquare, UserCheck, Loader2, AlertTriangle, Database, ExternalLink } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { ThemeToggle } from "@/components/theme-toggle"
 
@@ -17,6 +17,7 @@ interface ChatSidebarProps {
   onShowStories: () => void
   onShowCallHistory: () => void
   loading: boolean
+  dbNeedsSetup?: boolean
 }
 
 export default function ChatSidebar({
@@ -27,6 +28,7 @@ export default function ChatSidebar({
   onShowStories,
   onShowCallHistory,
   loading,
+  dbNeedsSetup: externalDbNeedsSetup = false,
 }: ChatSidebarProps) {
   const [searchQuery, setSearchQuery] = useState("")
   const [showNewChat, setShowNewChat] = useState(false)
@@ -35,6 +37,9 @@ export default function ChatSidebar({
   const [isSearching, setIsSearching] = useState(false)
   const [registeredUsers, setRegisteredUsers] = useState<any[]>([])
   const [loadingRegisteredUsers, setLoadingRegisteredUsers] = useState(false)
+  const [internalDbNeedsSetup, setInternalDbNeedsSetup] = useState(false)
+  const dbNeedsSetup = externalDbNeedsSetup || internalDbNeedsSetup
+  const setDbNeedsSetup = (val: boolean) => setInternalDbNeedsSetup(val)
   const router = useRouter()
 
   const handleLogout = async () => {
@@ -56,7 +61,11 @@ export default function ChatSidebar({
           .neq("id", user.id)
           .limit(20)
 
-        if (!fetchErr && data) {
+        if (fetchErr) {
+          if (fetchErr.code === "PGRST205" || fetchErr.message?.includes("schema cache") || fetchErr.message?.includes("profiles")) {
+            setDbNeedsSetup(true)
+          }
+        } else if (data) {
           setRegisteredUsers(data)
         }
       } catch (err) {
@@ -108,7 +117,12 @@ export default function ChatSidebar({
 
       if (createError) {
         console.error("Error creating conversation:", createError)
-        setError("Failed to create conversation: " + createError.message)
+        if (createError.code === "PGRST205" || createError.message?.includes("schema cache") || createError.message?.includes("conversations")) {
+          setDbNeedsSetup(true)
+          setError("Database tables not found. Please execute scripts/setup_complete_database.sql in your Supabase SQL Editor.")
+        } else {
+          setError("Failed to create conversation: " + createError.message)
+        }
         setIsSearching(false)
         return
       }
@@ -136,11 +150,20 @@ export default function ChatSidebar({
 
     try {
       // 1. Try exact email match (case-insensitive)
-      let { data: usersFound } = await supabase
+      let { data: usersFound, error: queryErr1 } = await supabase
         .from("profiles")
         .select("id, email, display_name, avatar_url")
         .ilike("email", query)
         .limit(1)
+
+      if (queryErr1) {
+        if (queryErr1.code === "PGRST205" || queryErr1.message?.includes("schema cache") || queryErr1.message?.includes("profiles")) {
+          setDbNeedsSetup(true)
+          setError("Database tables not found in Supabase. Please run scripts/setup_complete_database.sql in your Supabase SQL Editor.")
+          setIsSearching(false)
+          return
+        }
+      }
 
       // 2. Try display_name match (case-insensitive)
       if (!usersFound || usersFound.length === 0) {
@@ -281,7 +304,29 @@ export default function ChatSidebar({
               className="border-border bg-background text-sm rounded-xl"
               autoFocus
             />
-            {error && (
+            {dbNeedsSetup && (
+              <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-xs space-y-2">
+                <div className="flex items-center gap-1.5 font-semibold text-amber-600 dark:text-amber-400">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>Database Setup Required</span>
+                </div>
+                <p className="text-muted-foreground text-[11px] leading-relaxed">
+                  Database tables (<code>profiles</code>, <code>conversations</code>) have not been created in Supabase yet.
+                </p>
+                <a
+                  href="https://supabase.com/dashboard/project/wngcxtcufszlzpbtvauu/sql/new"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+                >
+                  Open Supabase SQL Editor <ExternalLink className="w-3 h-3" />
+                </a>
+                <p className="text-[10px] text-muted-foreground">
+                  Paste &amp; run <code>scripts/setup_complete_database.sql</code> to create tables and backfill your accounts.
+                </p>
+              </div>
+            )}
+            {error && !dbNeedsSetup && (
               <p className="text-xs text-destructive bg-destructive/10 border border-destructive/20 p-2 rounded-lg font-medium leading-relaxed">
                 {error}
               </p>
@@ -330,6 +375,27 @@ export default function ChatSidebar({
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* DB Setup Alert on Sidebar */}
+      {dbNeedsSetup && !showNewChat && (
+        <div className="m-3 p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-xs space-y-2 shrink-0">
+          <div className="flex items-center gap-1.5 font-semibold text-amber-600 dark:text-amber-400">
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            <span>Database Setup Required</span>
+          </div>
+          <p className="text-muted-foreground text-[11px] leading-relaxed">
+            Database tables have not been created in Supabase yet.
+          </p>
+          <a
+            href="https://supabase.com/dashboard/project/wngcxtcufszlzpbtvauu/sql/new"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+          >
+            Open Supabase SQL Editor <ExternalLink className="w-3 h-3" />
+          </a>
         </div>
       )}
 
