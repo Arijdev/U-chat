@@ -11,6 +11,15 @@ import { encryptMessage, decryptMessage } from "@/lib/encryption"
 import { VideoCallInterface } from "./video-call-interface"
 import { MessageBubble } from "./message-bubble"
 import { createSignaling } from "@/lib/signaling"
+import {
+  getLocalConversations,
+  getLocalMessages,
+  saveLocalMessage,
+  deleteLocalMessage,
+  getProfileById,
+  getKnownProfiles,
+  listenToSyncEvents,
+} from "@/lib/dataset"
 
 interface ChatWindowProps {
   conversationId: string
@@ -93,38 +102,75 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
     const loadConversationAndMessages = async () => {
       const supabase = createClient()
 
-      const { data: conversation, error: convError } = await supabase
-        .from("conversations")
-        .select("*")
-        .eq("id", conversationId)
-        .single()
+      let convData: any = null
+      try {
+        const { data: conversation, error: convError } = await supabase
+          .from("conversations")
+          .select("*")
+          .eq("id", conversationId)
+          .single()
 
-      if (convError) {
-        console.log(" Error loading conversation:", convError)
-      } else if (conversation) {
+        if (!convError && conversation) {
+          convData = conversation
+        }
+      } catch (e) {}
+
+      if (!convData) {
+        const localConvs = getLocalConversations(user.id)
+        convData = localConvs.find((c) => c.id === conversationId)
+      }
+
+      if (convData) {
         const otherUserId =
-          conversation.participant_1_id === user.id ? conversation.participant_2_id : conversation.participant_1_id
+          convData.participant_1_id === user.id ? convData.participant_2_id : convData.participant_1_id
 
-        const { data: otherUserProfile } = await supabase.from("profiles").select("*").eq("id", otherUserId).single()
+        let profile = convData.participant_1_id === user.id ? convData.participant_2 : convData.participant_1
 
-        setOtherUser(otherUserProfile)
+        if (!profile) {
+          try {
+            const { data: otherUserProfile } = await supabase.from("profiles").select("*").eq("id", otherUserId).single()
+            if (otherUserProfile) profile = otherUserProfile
+          } catch (e) {}
+        }
+
+        if (!profile) {
+          profile = getProfileById(otherUserId) || getKnownProfiles().find((p) => p.id === otherUserId) || {
+            id: otherUserId,
+            display_name: "Contact",
+            email: "user@example.com",
+          }
+        }
+
+        setOtherUser(profile)
       }
 
-      const { data, error: msgError } = await supabase
-        .from("messages")
-        .select("*")
-        .eq("conversation_id", conversationId)
-        .order("created_at", { ascending: false })
-        .limit(50)
+      let remoteMessages: any[] = []
+      try {
+        const { data, error: msgError } = await supabase
+          .from("messages")
+          .select("*")
+          .eq("conversation_id", conversationId)
+          .order("created_at", { ascending: false })
+          .limit(50)
 
-      if (msgError) {
-        console.log(" Error loading messages:", msgError)
-      } else {
-        const sorted = (data || []).reverse()
-        console.log(" Loaded messages:", sorted.length)
-        setMessages(sorted)
-        setHasMoreMessages((data?.length || 0) === 50)
-      }
+        if (!msgError && data) {
+          remoteMessages = (data || []).reverse()
+        }
+      } catch (e) {}
+
+      const localMessages = getLocalMessages(conversationId)
+
+      // Merge remote and local messages
+      const msgMap = new Map<string, any>()
+      localMessages.forEach((m) => msgMap.set(m.id, m))
+      remoteMessages.forEach((m) => msgMap.set(m.id, m))
+
+      const allMessages = Array.from(msgMap.values()).sort(
+        (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      )
+
+      setMessages(allMessages)
+      setHasMoreMessages(remoteMessages.length === 50)
       setLoading(false)
 
       const channel = supabase
@@ -165,8 +211,21 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
           console.log(" Subscription status:", status)
         })
 
+      const stopLocalSync = listenToSyncEvents((type, payload) => {
+        if (type === "message_inserted" && payload?.conversationId === conversationId) {
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === payload.message.id)) return prev
+            return [...prev, payload.message]
+          })
+        } else if (type === "message_deleted" && payload?.conversationId === conversationId) {
+          setMessages((prev) => prev.filter((m) => m.id !== payload.messageId))
+          decryptedMessagesRef.current.delete(payload.messageId)
+        }
+      })
+
       unsubscribeRef.current = () => {
         channel.unsubscribe()
+        stopLocalSync()
       }
     }
 
@@ -298,15 +357,15 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
   const handleSendMessage = async () => {
     if (!newMessage.trim()) return
 
+    const messageText = newMessage.trim()
+    setNewMessage("")
     const supabase = createClient()
 
     try {
-      const encryptedContent = await encryptMessage(newMessage, conversationId)
+      const encryptedContent = await encryptMessage(messageText, conversationId)
 
-      console.log(" Sending encrypted message")
-
-      const tempMessage = {
-        id: `temp-${Date.now()}`,
+      const messageObj = {
+        id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         conversation_id: conversationId,
         sender_id: user.id,
         content: encryptedContent,
@@ -314,36 +373,41 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
         is_encrypted: true,
         created_at: new Date().toISOString(),
       }
-      setMessages((prev) => [...prev, tempMessage])
-      decryptedMessagesRef.current.set(tempMessage.id, newMessage)
 
-      const { data, error } = await supabase
-        .from("messages")
-        .insert({
-          conversation_id: conversationId,
-          sender_id: user.id,
-          content: encryptedContent,
-          message_type: "text",
-          is_encrypted: true,
-        })
-        .select()
+      // 1. Optimistic & Local persistence
+      setMessages((prev) => [...prev, messageObj])
+      decryptedMessagesRef.current.set(messageObj.id, messageText)
+      saveLocalMessage(conversationId, messageObj)
 
-      if (error) {
-        console.log(" Error sending message:", error)
-        setMessages((prev) => prev.filter((m) => m.id !== tempMessage.id))
-        alert("Error sending message: " + error.message)
-      } else {
-        if (data && data[0]) {
-          setMessages((prev) => prev.map((m) => (m.id === tempMessage.id ? data[0] : m)))
-          decryptedMessagesRef.current.delete(tempMessage.id)
-          decryptedMessagesRef.current.set(data[0].id, newMessage)
+      // 2. Try remote Supabase insert
+      try {
+        const { data, error } = await supabase
+          .from("messages")
+          .insert({
+            conversation_id: conversationId,
+            sender_id: user.id,
+            content: encryptedContent,
+            message_type: "text",
+            is_encrypted: true,
+          })
+          .select()
+
+        if (!error && data && data[0]) {
+          setMessages((prev) => prev.map((m) => (m.id === messageObj.id ? data[0] : m)))
+          decryptedMessagesRef.current.delete(messageObj.id)
+          decryptedMessagesRef.current.set(data[0].id, messageText)
+          saveLocalMessage(conversationId, data[0])
         }
-        setNewMessage("")
-        await supabase.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", conversationId)
+
+        await supabase
+          .from("conversations")
+          .update({ updated_at: new Date().toISOString() })
+          .eq("id", conversationId)
+      } catch (e) {
+        console.warn("Supabase message insert skipped, stored locally")
       }
     } catch (err) {
-      console.log(" Error in handleSendMessage:", err)
-      alert("Error sending message")
+      console.error("Error in handleSendMessage:", err)
     }
   }
 
@@ -374,8 +438,8 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
     try {
       const encryptedContent = await encryptMessage("Shared a photo", conversationId)
 
-      const tempMessage = {
-        id: `temp-${Date.now()}`,
+      const photoMessage = {
+        id: `msg-photo-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         conversation_id: conversationId,
         sender_id: user.id,
         content: encryptedContent,
@@ -384,38 +448,43 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
         is_encrypted: true,
         created_at: new Date().toISOString(),
       }
-      setMessages((prev) => [...prev, tempMessage])
-      decryptedMessagesRef.current.set(tempMessage.id, "Shared a photo")
 
-      const { data, error } = await supabase
-        .from("messages")
-        .insert({
-          conversation_id: conversationId,
-          sender_id: user.id,
-          content: encryptedContent,
-          message_type: "photo",
-          media_url: photoPreview,
-          is_encrypted: true,
-        })
-        .select()
+      setMessages((prev) => [...prev, photoMessage])
+      decryptedMessagesRef.current.set(photoMessage.id, "Shared a photo")
+      saveLocalMessage(conversationId, photoMessage)
 
-      if (error) {
-        console.log(" Error uploading photo:", error)
-        setMessages((prev) => prev.filter((m) => m.id !== tempMessage.id))
-        alert("Error uploading photo: " + error.message)
-      } else {
-        if (data && data[0]) {
-          setMessages((prev) => prev.map((m) => (m.id === tempMessage.id ? data[0] : m)))
-          decryptedMessagesRef.current.delete(tempMessage.id)
+      setPhotoPreview(null)
+      setPhotoFile(null)
+
+      try {
+        const { data, error } = await supabase
+          .from("messages")
+          .insert({
+            conversation_id: conversationId,
+            sender_id: user.id,
+            content: encryptedContent,
+            message_type: "photo",
+            media_url: photoPreview,
+            is_encrypted: true,
+          })
+          .select()
+
+        if (!error && data && data[0]) {
+          setMessages((prev) => prev.map((m) => (m.id === photoMessage.id ? data[0] : m)))
+          decryptedMessagesRef.current.delete(photoMessage.id)
           decryptedMessagesRef.current.set(data[0].id, "Shared a photo")
+          saveLocalMessage(conversationId, data[0])
         }
-        setPhotoPreview(null)
-        setPhotoFile(null)
-        await supabase.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", conversationId)
+
+        await supabase
+          .from("conversations")
+          .update({ updated_at: new Date().toISOString() })
+          .eq("id", conversationId)
+      } catch (e) {
+        console.warn("Supabase photo insert skipped, stored locally")
       }
     } catch (err) {
-      console.log(" Error in handleSendPhoto:", err)
-      alert("Error uploading photo")
+      console.error("Error in handleSendPhoto:", err)
     }
   }
 
@@ -448,22 +517,17 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
   }
 
   const handleDeleteMessage = useCallback(async (messageId: string) => {
+    // 1. Delete locally immediately
+    setMessages((prev) => prev.filter((m) => m.id !== messageId))
+    decryptedMessagesRef.current.delete(messageId)
+    deleteLocalMessage(conversationId, messageId)
+
+    // 2. Silently attempt Supabase delete
     const supabase = createClient()
-
     try {
-      const { error } = await supabase.from("messages").delete().eq("id", messageId)
-
-      if (error) {
-        console.log(" Error deleting message:", error)
-        alert("Error deleting message: " + error.message)
-      } else {
-        console.log(" Message deleted successfully:", messageId)
-      }
-    } catch (err) {
-      console.log(" Error in handleDeleteMessage:", err)
-      alert("Error deleting message")
-    }
-  }, [])
+      await supabase.from("messages").delete().eq("id", messageId)
+    } catch (err) {}
+  }, [conversationId])
 
   const handleBackgroundChange = (color: string | null) => {
     setBackgroundColor(color)
