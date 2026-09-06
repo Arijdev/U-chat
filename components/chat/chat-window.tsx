@@ -255,6 +255,7 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
           case 'call-ended':
             if (msg.to === user.id) {
               setActiveCall(null)
+              setIncomingCall(null)
               setShowCallModal(false)
             }
             break
@@ -332,6 +333,13 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
   const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+
+    // Guard against huge base64 blobs stored in DB (base64 is ~33% larger than raw)
+    if (file.size > 750_000) {
+      alert("Image too large. Please select an image under 750KB.")
+      e.target.value = ""
+      return
+    }
 
     const reader = new FileReader()
     reader.onload = (event) => {
@@ -481,22 +489,29 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
   const handleCallEnd = async (duration: number) => {
     const supabase = createClient()
     try {
-      await supabase
+      // Fetch the most recent active/ringing call record between these two users, then update by ID
+      // (Supabase does not support .order()/.limit() on UPDATE queries)
+      const { data: calls } = await supabase
         .from("call_history")
-        .update({
-          status: "completed",
-          duration_seconds: duration,
-        })
-        .eq("caller_id", user.id)
-        .eq("receiver_id", otherUser.id)
+        .select("id")
+        .or(
+          `and(caller_id.eq.${user.id},receiver_id.eq.${otherUser?.id}),and(caller_id.eq.${otherUser?.id},receiver_id.eq.${user.id})`
+        )
+        .in("status", ["ringing", "active"])
         .order("created_at", { ascending: false })
         .limit(1)
 
+      if (calls && calls[0]) {
+        await supabase
+          .from("call_history")
+          .update({ status: "completed", duration_seconds: duration })
+          .eq("id", calls[0].id)
+      }
+
       setActiveCall(null)
       console.log(" Call ended with duration:", duration)
-  setIsCaller(false)
+      setIsCaller(false)
       try {
-        // notify other user via signaling websocket
         signalingRef.current?.send({ type: 'call-ended', from: user.id, to: otherUser?.id, conversationId })
       } catch (err) {
         console.warn(' Signaling send failed', err)
@@ -520,13 +535,22 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
 
     const supabase = createClient()
     try {
-      await supabase
+      // Fetch the call record ID first — .order()/.limit() are not valid on UPDATE in Supabase
+      const { data: calls } = await supabase
         .from("call_history")
-        .update({ status: "active" })
+        .select("id")
         .eq("caller_id", incomingCall?.callerId)
         .eq("receiver_id", user.id)
+        .eq("status", "ringing")
         .order("created_at", { ascending: false })
         .limit(1)
+
+      if (calls && calls[0]) {
+        await supabase
+          .from("call_history")
+          .update({ status: "active" })
+          .eq("id", calls[0].id)
+      }
 
       setActiveCall({
         type: incomingCall?.callType || "voice",
@@ -547,13 +571,22 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
   const handleRejectCall = async () => {
     const supabase = createClient()
     try {
-      await supabase
+      // Fetch the call record ID first — .order()/.limit() are not valid on UPDATE in Supabase
+      const { data: calls } = await supabase
         .from("call_history")
-        .update({ status: "rejected" })
+        .select("id")
         .eq("caller_id", incomingCall?.callerId)
         .eq("receiver_id", user.id)
+        .eq("status", "ringing")
         .order("created_at", { ascending: false })
         .limit(1)
+
+      if (calls && calls[0]) {
+        await supabase
+          .from("call_history")
+          .update({ status: "rejected" })
+          .eq("id", calls[0].id)
+      }
 
       setIncomingCall(null)
       setIsCaller(false)
@@ -788,19 +821,23 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
               <Smile className="w-4 md:w-5 h-4 md:h-5" />
             </Button>
             {showEmojiPicker && (
-              <div className="absolute bottom-full left-0 mb-2 bg-white border border-gray-200 rounded-lg shadow-lg p-3 z-50 w-max">
-                <div className="grid grid-cols-5 gap-2">
-                  {emojis.map((emoji) => (
-                    <button
-                      key={emoji}
-                      onClick={() => addEmoji(emoji)}
-                      className="text-2xl hover:bg-gray-100 p-2 rounded transition-colors cursor-pointer"
-                    >
-                      {emoji}
-                    </button>
-                  ))}
+              <>
+                {/* Transparent overlay — clicking outside the picker closes it */}
+                <div className="fixed inset-0 z-40" onClick={() => setShowEmojiPicker(false)} />
+                <div className="absolute bottom-full left-0 mb-2 bg-white border border-gray-200 rounded-lg shadow-lg p-3 z-50 w-max">
+                  <div className="grid grid-cols-5 gap-2">
+                    {emojis.map((emoji) => (
+                      <button
+                        key={emoji}
+                        onClick={() => addEmoji(emoji)}
+                        className="text-2xl hover:bg-gray-100 p-2 rounded transition-colors cursor-pointer"
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              </>
             )}
           </div>
 

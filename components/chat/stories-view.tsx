@@ -42,6 +42,12 @@ export default function StoriesView({ user, onClose }: StoriesViewProps) {
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
+      // Guard against huge base64 blobs in DB (base64 is ~33% larger than raw)
+      if (file.size > 750_000) {
+        alert("Image too large. Please select an image under 750KB.")
+        e.target.value = ""
+        return
+      }
       setSelectedFile(file)
       const reader = new FileReader()
       reader.onload = (event) => {

@@ -15,7 +15,8 @@ export function MessageBubble({ msg, isOwn, onGetDecrypted, onDelete }: MessageB
 
   useEffect(() => {
     onGetDecrypted(msg).then(setContent)
-  }, [msg, onGetDecrypted])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [msg.id, msg.content]) // only re-run when message data changes, not on every parent render
 
   return (
     <div className={`flex ${isOwn ? "justify-end" : "justify-start"} group`}>

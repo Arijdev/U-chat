@@ -104,7 +104,11 @@ export default function ChatSidebar({
 
   const filteredConversations = conversations.filter((conv) => {
     const otherParticipant = conv.participant_1_id === user.id ? conv.participant_2 : conv.participant_1
-    return otherParticipant?.email?.toLowerCase().includes(searchQuery.toLowerCase())
+    const q = searchQuery.toLowerCase()
+    return (
+      otherParticipant?.email?.toLowerCase().includes(q) ||
+      otherParticipant?.display_name?.toLowerCase().includes(q)
+    )
   })
 
   return (
