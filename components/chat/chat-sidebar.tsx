@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input"
 import { LogOut, Plus, Search, Zap, Clock, MessageSquare, UserCheck, Loader2, Edit2 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { ThemeToggle } from "@/components/theme-toggle"
-import { ProfileModal } from "./profile-modal"
+import { ProfileDrawer } from "./profile-drawer"
 import {
   apiGetUsers,
   apiCreateConversation,
@@ -54,6 +54,9 @@ export default function ChatSidebar({
   )
   const [currentStatus, setCurrentStatus] = useState(
     user.user_metadata?.status || "Hey there! I am using WhatsApp."
+  )
+  const [currentAvatarUrl, setCurrentAvatarUrl] = useState(
+    user.user_metadata?.avatar_url || ""
   )
   const router = useRouter()
 
@@ -253,14 +256,18 @@ export default function ChatSidebar({
           </div>
         </div>
 
-        {/* Current User Profile Card - Click to Update Name & Status */}
+        {/* Current User Profile Card - Click to Update Name, Photo & Status */}
         <button
           onClick={() => setShowProfileModal(true)}
           className="flex items-center gap-2.5 p-2 rounded-xl bg-muted/40 hover:bg-muted/70 transition-colors w-full text-left cursor-pointer border border-border/50 group"
-          title="Click to update your display name and status"
+          title="Click to view & update your WhatsApp profile"
         >
-          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-semibold text-sm shrink-0 shadow-xs">
-            {currentDisplayName?.[0]?.toUpperCase() || user.email?.[0]?.toUpperCase() || "?"}
+          <div className="w-9 h-9 rounded-full overflow-hidden bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-semibold text-sm shrink-0 shadow-xs">
+            {currentAvatarUrl ? (
+              <img src={currentAvatarUrl} alt={currentDisplayName} className="w-full h-full object-cover" />
+            ) : (
+              currentDisplayName?.[0]?.toUpperCase() || user.email?.[0]?.toUpperCase() || "?"
+            )}
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-xs font-semibold text-foreground truncate group-hover:text-emerald-600 transition-colors">
@@ -269,7 +276,7 @@ export default function ChatSidebar({
             <p className="text-[10px] text-muted-foreground truncate">{currentStatus}</p>
           </div>
           <div className="flex items-center gap-1 text-[10px] text-emerald-600 font-medium px-2 py-0.5 rounded-md bg-emerald-500/10">
-            <Edit2 className="w-3 h-3" /> Edit
+            <Edit2 className="w-3 h-3" /> Profile
           </div>
         </button>
 
@@ -408,8 +415,16 @@ export default function ChatSidebar({
                     : "hover:bg-muted/50"
                 }`}
               >
-                <div className="w-11 h-11 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-full flex items-center justify-center text-white font-semibold shrink-0 shadow-xs">
-                  {otherParticipant?.display_name?.[0]?.toUpperCase() || otherParticipant?.email?.[0]?.toUpperCase() || "?"}
+                <div className="w-11 h-11 rounded-full overflow-hidden bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-semibold shrink-0 shadow-xs">
+                  {otherParticipant?.avatar_url ? (
+                    <img
+                      src={otherParticipant.avatar_url}
+                      alt={otherParticipant.display_name || "User"}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    otherParticipant?.display_name?.[0]?.toUpperCase() || otherParticipant?.email?.[0]?.toUpperCase() || "?"
+                  )}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold text-sm text-foreground truncate">
@@ -424,18 +439,20 @@ export default function ChatSidebar({
       </div>
 
       {showProfileModal && (
-        <ProfileModal
+        <ProfileDrawer
           user={user}
           currentProfile={{
             id: user.id,
             email: user.email || "",
             display_name: currentDisplayName,
             status: currentStatus,
+            avatar_url: currentAvatarUrl,
           }}
           onClose={() => setShowProfileModal(false)}
           onProfileUpdated={(updated) => {
             setCurrentDisplayName(updated.display_name)
             if (updated.status) setCurrentStatus(updated.status)
+            if (updated.avatar_url !== undefined) setCurrentAvatarUrl(updated.avatar_url)
           }}
         />
       )}

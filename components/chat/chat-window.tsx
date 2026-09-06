@@ -22,6 +22,7 @@ import {
 import { encryptMessage, decryptMessage } from "@/lib/encryption"
 import { VideoCallInterface } from "./video-call-interface"
 import { MessageBubble } from "./message-bubble"
+import { ContactInfoDrawer } from "./contact-info-drawer"
 import { createSignaling, dispatchSignalingMessage } from "@/lib/signaling"
 import {
   apiGetMessages,
@@ -47,6 +48,7 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
   const [showAttachMenu, setShowAttachMenu] = useState(false)
   const [searchInChat, setSearchInChat] = useState("")
   const [showSearch, setShowSearch] = useState(false)
+  const [showContactInfo, setShowContactInfo] = useState(false)
 
   // Voice recording state
   const [isRecording, setIsRecording] = useState(false)
@@ -638,10 +640,22 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
 
       {/* WhatsApp Header */}
       <div className="border-b border-border/60 p-3 md:px-4 md:py-2.5 flex items-center justify-between bg-white dark:bg-[#202c33] shadow-xs z-10">
-        <div className="flex items-center gap-3 min-w-0">
+        <div
+          onClick={() => setShowContactInfo(!showContactInfo)}
+          className="flex items-center gap-3 min-w-0 cursor-pointer hover:opacity-85 transition-opacity"
+          title="Click to view contact info"
+        >
           <div className="relative shrink-0">
-            <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-full flex items-center justify-center text-white font-semibold text-base shadow-xs">
-              {otherUser?.display_name?.[0]?.toUpperCase() || otherUser?.email?.[0]?.toUpperCase() || "?"}
+            <div className="w-10 h-10 rounded-full overflow-hidden bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-semibold text-base shadow-xs">
+              {otherUser?.avatar_url ? (
+                <img
+                  src={otherUser.avatar_url}
+                  alt={otherUser.display_name || "Contact"}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                otherUser?.display_name?.[0]?.toUpperCase() || otherUser?.email?.[0]?.toUpperCase() || "?"
+              )}
             </div>
             <span className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 rounded-full border-2 border-white dark:border-[#202c33]" />
           </div>
@@ -649,7 +663,9 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
             <p className="font-semibold text-foreground text-sm md:text-base truncate leading-tight">
               {otherUser?.display_name || otherUser?.email?.split("@")[0] || "Chat"}
             </p>
-            <p className="text-[11px] text-emerald-600 dark:text-emerald-400 truncate font-medium">online</p>
+            <p className="text-[11px] text-emerald-600 dark:text-emerald-400 truncate font-medium">
+              {otherUser?.status || "online"}
+            </p>
           </div>
         </div>
 
@@ -761,8 +777,11 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
         />
       )}
 
-      {/* Messages Container */}
-      <div className="flex-1 overflow-y-auto p-3 md:p-4 space-y-1 relative z-0">
+      {/* Chat Area & Contact Info Drawer */}
+      <div className="flex-1 flex overflow-hidden relative">
+        <div className="flex-1 flex flex-col relative overflow-hidden">
+          {/* Messages Container */}
+          <div className="flex-1 overflow-y-auto p-3 md:p-4 space-y-1 relative z-0">
         {loading ? (
           <div className="text-center text-sm text-muted-foreground pt-8 flex items-center justify-center gap-2">
             <Loader2 className="w-4 h-4 animate-spin text-emerald-600" /> Loading messages...
@@ -944,5 +963,32 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
         )}
       </div>
     </div>
+
+    {/* WhatsApp Contact Info Drawer */}
+    {showContactInfo && (
+      <ContactInfoDrawer
+        contact={
+          otherUser || {
+            id: "unknown",
+            display_name: "Contact",
+            email: "",
+            status: "Hey there! I am using WhatsApp.",
+          }
+        }
+        messages={messages}
+        onClose={() => setShowContactInfo(false)}
+        onVoiceCall={() => handleCall("voice")}
+        onVideoCall={() => handleCall("video")}
+        onSearchInChat={() => setShowSearch(true)}
+        onClearChat={async () => {
+          for (const m of messages) {
+            await apiDeleteMessage(m.id)
+          }
+          setMessages([])
+        }}
+      />
+    )}
+  </div>
+</div>
   )
 }
