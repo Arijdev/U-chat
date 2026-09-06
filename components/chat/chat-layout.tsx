@@ -2,17 +2,16 @@
 
 import type { User } from "@supabase/supabase-js"
 import { useState, useEffect, useCallback } from "react"
-import { createClient } from "@/lib/supabase/client"
 import ChatSidebar from "./chat-sidebar"
 import ChatWindow from "./chat-window"
 import StoriesView from "./stories-view"
 import CallHistory from "./call-history"
 import {
-  registerProfile,
-  getLocalConversations,
-  getKnownProfiles,
-  listenToSyncEvents,
-} from "@/lib/dataset"
+  apiRegisterUser,
+  apiGetConversations,
+  connectChatStream,
+} from "@/lib/chat-api"
+import { registerProfile } from "@/lib/dataset"
 
 export default function ChatLayout({ user }: { user: User }) {
   const [selectedConversation, setSelectedConversation] = useState<string | null>(null)
@@ -21,146 +20,47 @@ export default function ChatLayout({ user }: { user: User }) {
   const [conversations, setConversations] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
-  // Register current user into known profiles dataset
+  // 1. Register current user on the backend server and local store
   useEffect(() => {
-    registerProfile({
+    const userData = {
       id: user.id,
       email: user.email || "",
       display_name: user.user_metadata?.display_name || user.email?.split("@")[0] || "User",
       avatar_url: user.user_metadata?.avatar_url || "",
-      status: "online",
-    })
+    }
+    apiRegisterUser(userData)
+    registerProfile(userData)
   }, [user])
 
   const loadConversations = useCallback(async () => {
-    const supabase = createClient()
-
-    // 1. Try to sync current user profile in Supabase (silent)
     try {
-      await supabase.from("profiles").upsert(
-        {
-          id: user.id,
-          email: user.email,
-          display_name: user.user_metadata?.display_name || user.email?.split("@")[0] || "User",
-          avatar_url: user.user_metadata?.avatar_url || "",
-          status: "online",
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "id" }
-      )
-    } catch (err) {}
-
-    // 2. Fetch remote conversations from Supabase
-    let remoteConvs: any[] = []
-    try {
-      const { data: convData, error: convError } = await supabase
-        .from("conversations")
-        .select("*")
-        .or(`participant_1_id.eq.${user.id},participant_2_id.eq.${user.id}`)
-        .order("updated_at", { ascending: false })
-
-      if (!convError && convData) {
-        // Enrich profiles from Supabase
-        const profileIds = new Set<string>()
-        convData.forEach((c) => {
-          profileIds.add(c.participant_1_id)
-          profileIds.add(c.participant_2_id)
-        })
-
-        const { data: profiles } = await supabase
-          .from("profiles")
-          .select("id, email, display_name, avatar_url")
-          .in("id", Array.from(profileIds))
-
-        const profileMap = new Map((profiles || []).map((p) => [p.id, p]))
-
-        remoteConvs = convData.map((conv) => ({
-          ...conv,
-          participant_1: profileMap.get(conv.participant_1_id),
-          participant_2: profileMap.get(conv.participant_2_id),
-        }))
-      }
-    } catch (err) {
-      console.warn("Supabase conversations fetch failed:", err)
+      const convs = await apiGetConversations(user.id)
+      setConversations(convs)
+    } catch (e) {
+      console.warn("Error loading conversations:", e)
+    } finally {
+      setLoading(false)
     }
-
-    // 3. Fetch local dataset conversations
-    const localConvs = getLocalConversations(user.id)
-
-    // 4. Merge conversations (remote + local, avoiding duplicates)
-    const convMap = new Map<string, any>()
-    const allKnownProfiles = getKnownProfiles()
-    const fallbackProfileMap = new Map(allKnownProfiles.map((p) => [p.id, p]))
-
-    // Add local first
-    localConvs.forEach((c) => {
-      convMap.set(c.id, c)
-    })
-
-    // Remote overwrites local if exists
-    remoteConvs.forEach((c) => {
-      convMap.set(c.id, c)
-    })
-
-    // Ensure participants are enriched even if remote profiles table was missing
-    const enrichedList = Array.from(convMap.values()).map((conv) => {
-      const p1 = conv.participant_1 || fallbackProfileMap.get(conv.participant_1_id) || {
-        id: conv.participant_1_id,
-        email: "user@example.com",
-        display_name: "User",
-      }
-      const p2 = conv.participant_2 || fallbackProfileMap.get(conv.participant_2_id) || {
-        id: conv.participant_2_id,
-        email: "user@example.com",
-        display_name: "User",
-      }
-      return {
-        ...conv,
-        participant_1: p1,
-        participant_2: p2,
-      }
-    })
-
-    enrichedList.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
-    setConversations(enrichedList)
-    setLoading(false)
-  }, [user])
+  }, [user.id])
 
   useEffect(() => {
     loadConversations()
 
-    // Realtime Supabase changes
-    const supabase = createClient()
-    const channelName = `conversations-changes-${Date.now()}`
-    const channel = supabase
-      .channel(channelName)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "conversations",
-        },
-        () => {
-          loadConversations()
-        },
-      )
-      .subscribe()
-
-    // Realtime local sync across tabs/windows
-    const stopListening = listenToSyncEvents((type) => {
-      if (type === "conversation_created" || type === "message_inserted") {
+    // Realtime server stream: updates instantaneously when any message or conversation is created
+    const disconnectStream = connectChatStream(user.id, (event) => {
+      if (
+        event.type === "conversation_created" ||
+        event.type === "message_inserted" ||
+        event.type === "heartbeat_poll"
+      ) {
         loadConversations()
       }
     })
 
     return () => {
-      try {
-        supabase.removeChannel(channel)
-      } catch (e) {}
-      stopListening()
+      disconnectStream()
     }
-  }, [loadConversations])
+  }, [user.id, loadConversations])
 
   return (
     <div className="flex flex-col md:flex-row h-screen bg-background text-foreground w-full overflow-hidden">
@@ -181,12 +81,12 @@ export default function ChatLayout({ user }: { user: User }) {
       ) : (
         <div className="flex-1 hidden md:flex items-center justify-center bg-gradient-to-br from-background via-muted/20 to-accent/10">
           <div className="text-center p-8 max-w-sm">
-            <div className="w-16 h-16 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mx-auto mb-4 text-3xl shadow-xs">
+            <div className="w-16 h-16 rounded-2xl bg-emerald-600/10 text-emerald-600 flex items-center justify-center mx-auto mb-4 text-3xl shadow-xs">
               💬
             </div>
-            <h2 className="text-xl font-bold text-foreground mb-1">Select a conversation</h2>
+            <h2 className="text-xl font-bold text-foreground mb-1">WhatsApp Web</h2>
             <p className="text-sm text-muted-foreground">
-              Choose a contact from the sidebar or click + to start messaging right away.
+              Send and receive messages with real-time end-to-end sync, voice notes, photos, and calls.
             </p>
           </div>
         </div>

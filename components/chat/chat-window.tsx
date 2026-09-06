@@ -3,7 +3,6 @@
 import type React from "react"
 import type { User } from "@supabase/supabase-js"
 import { useEffect, useRef, useState, useCallback } from "react"
-import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -11,33 +10,28 @@ import {
   Phone,
   PhoneOff,
   Video,
-  Share2,
   ImageIcon,
   Smile,
-  MoreVertical,
-  X,
-  Loader2,
   Paperclip,
   FileText,
   Mic,
   Trash2,
   Search,
-  Check,
-  CheckCheck,
+  Loader2,
 } from "lucide-react"
 import { encryptMessage, decryptMessage } from "@/lib/encryption"
 import { VideoCallInterface } from "./video-call-interface"
 import { MessageBubble } from "./message-bubble"
-import { createSignaling } from "@/lib/signaling"
+import { createSignaling, dispatchSignalingMessage } from "@/lib/signaling"
 import {
-  getLocalConversations,
-  getLocalMessages,
-  saveLocalMessage,
-  deleteLocalMessage,
-  getProfileById,
-  getKnownProfiles,
-  listenToSyncEvents,
-} from "@/lib/dataset"
+  apiGetMessages,
+  apiSendMessage,
+  apiDeleteMessage,
+  apiGetConversations,
+  connectChatStream,
+  type ChatMessage,
+} from "@/lib/chat-api"
+import { getProfileById, getKnownProfiles } from "@/lib/dataset"
 
 interface ChatWindowProps {
   conversationId: string
@@ -48,8 +42,6 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
   const [messages, setMessages] = useState<any[]>([])
   const [newMessage, setNewMessage] = useState("")
   const [loading, setLoading] = useState(true)
-  const [hasMoreMessages, setHasMoreMessages] = useState(false)
-  const [loadingMore, setLoadingMore] = useState(false)
   const [otherUser, setOtherUser] = useState<any>(null)
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const [showAttachMenu, setShowAttachMenu] = useState(false)
@@ -66,8 +58,6 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
   // Calling state
   const [showCallModal, setShowCallModal] = useState(false)
   const [callType, setCallType] = useState<"voice" | "video">("voice")
-  const [callStatus, setCallStatus] = useState<"ringing" | "connected" | "ended">("ringing")
-  const [callDuration, setCallDuration] = useState(0)
   const [incomingCall, setIncomingCall] = useState<{
     callerId: string
     callerName: string
@@ -82,8 +72,6 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const docInputRef = useRef<HTMLInputElement>(null)
-  const unsubscribeRef = useRef<(() => void) | null>(null)
-  const callUnsubscribeRef = useRef<(() => void) | null>(null)
   const decryptedMessagesRef = useRef<Map<string, string>>(new Map())
   const callTimerRef = useRef<NodeJS.Timeout | null>(null)
   const signalingRef = useRef<any>(null)
@@ -124,206 +112,130 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
     [conversationId],
   )
 
+  // Load conversation details & messages via Server Store (prevents Supabase 404 errors)
   useEffect(() => {
-    const loadConversationAndMessages = async () => {
-      const supabase = createClient()
+    let isSubscribed = true
 
-      let convData: any = null
-      try {
-        const { data: conversation } = await supabase
-          .from("conversations")
-          .select("*")
-          .eq("id", conversationId)
-          .single()
+    const loadData = async () => {
+      // 1. Get conversation info
+      const convs = await apiGetConversations(user.id)
+      const conv = convs.find((c) => c.id === conversationId)
 
-        if (conversation) {
-          convData = conversation
+      if (conv && isSubscribed) {
+        const otherId = conv.participant_1_id === user.id ? conv.participant_2_id : conv.participant_1_id
+        const profile =
+          conv.participant_1_id === user.id
+            ? conv.participant_2
+            : conv.participant_1
+
+        if (profile) {
+          setOtherUser(profile)
+        } else {
+          const fallback =
+            getProfileById(otherId) ||
+            getKnownProfiles().find((p) => p.id === otherId) || {
+              id: otherId,
+              display_name: otherId.slice(0, 8),
+              email: `${otherId.slice(0, 8)}@uchat.com`,
+            }
+          setOtherUser(fallback)
         }
-      } catch (e) {}
-
-      if (!convData) {
-        const localConvs = getLocalConversations(user.id)
-        convData = localConvs.find((c) => c.id === conversationId)
       }
 
-      if (convData) {
-        const otherUserId =
-          convData.participant_1_id === user.id ? convData.participant_2_id : convData.participant_1_id
-
-        let profile = convData.participant_1_id === user.id ? convData.participant_2 : convData.participant_1
-
-        if (!profile) {
-          try {
-            const { data: otherUserProfile } = await supabase.from("profiles").select("*").eq("id", otherUserId).single()
-            if (otherUserProfile) profile = otherUserProfile
-          } catch (e) {}
-        }
-
-        if (!profile) {
-          profile = getProfileById(otherUserId) || getKnownProfiles().find((p) => p.id === otherUserId) || {
-            id: otherUserId,
-            display_name: "Contact",
-            email: "user@example.com",
-          }
-        }
-
-        setOtherUser(profile)
+      // 2. Get messages for this conversation
+      const msgList = await apiGetMessages(conversationId)
+      if (isSubscribed) {
+        setMessages(msgList)
+        setLoading(false)
       }
+    }
 
-      let remoteMessages: any[] = []
-      try {
-        const { data } = await supabase
-          .from("messages")
-          .select("*")
-          .eq("conversation_id", conversationId)
-          .order("created_at", { ascending: false })
-          .limit(100)
+    loadData()
 
-        if (data) {
-          remoteMessages = (data || []).reverse()
-        }
-      } catch (e) {}
+    // 3. Connect to Real-time Event Stream
+    const disconnectStream = connectChatStream(user.id, (event) => {
+      if (!isSubscribed) return
 
-      const localMessages = getLocalMessages(conversationId)
-
-      const msgMap = new Map<string, any>()
-      localMessages.forEach((m) => msgMap.set(m.id, m))
-      remoteMessages.forEach((m) => msgMap.set(m.id, m))
-
-      const allMessages = Array.from(msgMap.values()).sort(
-        (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-      )
-
-      setMessages(allMessages)
-      setHasMoreMessages(remoteMessages.length >= 100)
-      setLoading(false)
-
-      // Supabase Realtime for instant messaging
-      const channelName = `messages:${conversationId}:${Date.now()}`
-      const channel = supabase
-        .channel(channelName)
-        .on(
-          "postgres_changes",
-          {
-            event: "INSERT",
-            schema: "public",
-            table: "messages",
-            filter: `conversation_id=eq.${conversationId}`,
-          },
-          (payload) => {
+      switch (event.type) {
+        case "message_inserted": {
+          const newMsg = event.payload
+          if (newMsg && newMsg.conversation_id === conversationId) {
             setMessages((prev) => {
-              if (prev.some((m) => m.id === payload.new.id)) return prev
-              return [...prev, payload.new]
+              if (prev.some((m) => m.id === newMsg.id)) return prev
+              return [...prev, newMsg]
             })
-          },
-        )
-        .on(
-          "postgres_changes",
-          {
-            event: "DELETE",
-            schema: "public",
-            table: "messages",
-            filter: `conversation_id=eq.${conversationId}`,
-          },
-          (payload) => {
-            setMessages((prev) => prev.filter((m) => m.id !== payload.old.id))
-            decryptedMessagesRef.current.delete(payload.old.id)
-          },
-        )
-        .subscribe()
-
-      // Cross-tab realtime synchronization
-      const stopLocalSync = listenToSyncEvents((type, payload) => {
-        if (type === "message_inserted" && payload?.conversationId === conversationId) {
-          setMessages((prev) => {
-            if (prev.some((m) => m.id === payload.message.id)) return prev
-            return [...prev, payload.message]
-          })
-        } else if (type === "message_deleted" && payload?.conversationId === conversationId) {
-          setMessages((prev) => prev.filter((m) => m.id !== payload.messageId))
-          decryptedMessagesRef.current.delete(payload.messageId)
-        }
-      })
-
-      unsubscribeRef.current = () => {
-        try {
-          supabase.removeChannel(channel)
-        } catch (e) {}
-        stopLocalSync()
-      }
-    }
-
-    loadConversationAndMessages()
-
-    return () => {
-      unsubscribeRef.current?.()
-    }
-  }, [conversationId, user.id])
-
-  // Call notifications listener
-  useEffect(() => {
-    const supabase = createClient()
-    const channelName = `calls:${user.id}:${Date.now()}`
-
-    const channel = supabase
-      .channel(channelName)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "call_history",
-          filter: `receiver_id=eq.${user.id}`,
-        },
-        (payload) => {
-          if (payload.new.status === "ringing") {
-            supabase
-              .from("profiles")
-              .select("display_name")
-              .eq("id", payload.new.caller_id)
-              .single()
-              .then(({ data }) => {
-                setIncomingCall({
-                  callerId: payload.new.caller_id,
-                  callerName: data?.display_name || "Unknown",
-                  callType: payload.new.call_type,
-                })
-              })
           }
-        },
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "call_history",
-          filter: `receiver_id=eq.${user.id}`,
-        },
-        (payload) => {
-          if (payload.new.status === "active") {
-            setActiveCall({
-              type: payload.new.call_type,
-              startTime: Date.now(),
+          break
+        }
+
+        case "message_deleted": {
+          const { conversationId: cId, messageId } = event.payload || {}
+          if (cId === conversationId && messageId) {
+            setMessages((prev) => prev.filter((m) => m.id !== messageId))
+            decryptedMessagesRef.current.delete(messageId)
+          }
+          break
+        }
+
+        case "signaling": {
+          const sig = event.payload?.payload || event.payload
+          if (sig) {
+            dispatchSignalingMessage(user.id, sig)
+          }
+          break
+        }
+
+        case "call_incoming": {
+          const call = event.payload
+          if (call && call.caller_id !== user.id) {
+            setIncomingCall({
+              callerId: call.caller_id,
+              callerName: call.caller_name || otherUser?.display_name || "Contact",
+              callType: call.call_type || "voice",
             })
+          }
+          break
+        }
+
+        case "call_status": {
+          const call = event.payload
+          if (call?.status === "completed" || call?.status === "rejected") {
+            setActiveCall(null)
+            setIncomingCall(null)
+            setShowCallModal(false)
+          } else if (call?.status === "active") {
+            setActiveCall((prev) => prev || { type: call.call_type || "voice", startTime: Date.now() })
             setIncomingCall(null)
           }
-        },
-      )
-      .subscribe()
+          break
+        }
 
-    callUnsubscribeRef.current = () => {
-      try {
-        supabase.removeChannel(channel)
-      } catch (e) {}
-    }
+        case "heartbeat_poll": {
+          // Quiet background sync to ensure zero missed messages
+          apiGetMessages(conversationId).then((latest) => {
+            if (!isSubscribed) return
+            setMessages((prev) => {
+              if (latest.length !== prev.length || latest[latest.length - 1]?.id !== prev[prev.length - 1]?.id) {
+                return latest
+              }
+              return prev
+            })
+          })
+          break
+        }
+
+        default:
+          break
+      }
+    })
 
     return () => {
-      callUnsubscribeRef.current?.()
+      isSubscribed = false
+      disconnectStream()
     }
-  }, [user.id])
+  }, [conversationId, user.id, otherUser?.display_name])
 
-  // WebRTC Signaling connection
+  // WebRTC Signaling setup
   useEffect(() => {
     if (!user?.id) return
 
@@ -336,7 +248,7 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
             if (msg.to === user.id) {
               setIncomingCall({
                 callerId: msg.from,
-                callerName: msg.fromName || "Unknown",
+                callerName: msg.fromName || otherUser?.display_name || "Contact",
                 callType: msg.callType || "voice",
               })
             }
@@ -370,7 +282,7 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
       } catch (err) {}
       signalingRef.current = null
     }
-  }, [user.id])
+  }, [user.id, otherUser?.display_name])
 
   // SEND TEXT MESSAGE
   const handleSendMessage = async () => {
@@ -378,54 +290,53 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
 
     const messageText = newMessage.trim()
     setNewMessage("")
-    const supabase = createClient()
 
     try {
-      const encryptedContent = await encryptMessage(messageText, conversationId)
+      let encryptedContent = messageText
+      let isEncrypted = false
 
-      const messageObj = {
-        id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      try {
+        encryptedContent = await encryptMessage(messageText, conversationId)
+        isEncrypted = true
+      } catch (e) {
+        encryptedContent = messageText
+        isEncrypted = false
+      }
+
+      // Optimistic message
+      const tempId = `msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+      const optimisticMsg: ChatMessage = {
+        id: tempId,
         conversation_id: conversationId,
         sender_id: user.id,
         content: encryptedContent,
         message_type: "text",
-        is_encrypted: true,
+        is_encrypted: isEncrypted,
         created_at: new Date().toISOString(),
       }
 
-      setMessages((prev) => [...prev, messageObj])
-      decryptedMessagesRef.current.set(messageObj.id, messageText)
-      saveLocalMessage(conversationId, messageObj)
+      decryptedMessagesRef.current.set(tempId, messageText)
+      setMessages((prev) => [...prev, optimisticMsg])
 
-      // Store in Supabase
-      try {
-        const { data } = await supabase
-          .from("messages")
-          .insert({
-            conversation_id: conversationId,
-            sender_id: user.id,
-            content: encryptedContent,
-            message_type: "text",
-            is_encrypted: true,
-          })
-          .select()
+      // Persist to server store and broadcast via SSE
+      const saved = await apiSendMessage({
+        conversation_id: conversationId,
+        sender_id: user.id,
+        content: encryptedContent,
+        message_type: "text",
+        is_encrypted: isEncrypted,
+      })
 
-        if (data && data[0]) {
-          setMessages((prev) => prev.map((m) => (m.id === messageObj.id ? data[0] : m)))
-          decryptedMessagesRef.current.delete(messageObj.id)
-          decryptedMessagesRef.current.set(data[0].id, messageText)
-          saveLocalMessage(conversationId, data[0])
-        }
-
-        await supabase
-          .from("conversations")
-          .update({ updated_at: new Date().toISOString() })
-          .eq("id", conversationId)
-      } catch (e) {}
-    } catch (err) {}
+      if (saved && saved.id) {
+        decryptedMessagesRef.current.set(saved.id, messageText)
+        setMessages((prev) => prev.map((m) => (m.id === tempId ? saved : m)))
+      }
+    } catch (err) {
+      console.error("Error sending message:", err)
+    }
   }
 
-  // SEND ATTACHMENT (Photo, Video, Document - NO FILE SIZE LIMIT)
+  // SEND ATTACHMENT (Photo, Video, Document, Audio - NO FILE SIZE LIMIT)
   const sendAttachment = async (attachment: {
     media_url: string
     message_type: "photo" | "video" | "document" | "audio"
@@ -434,10 +345,10 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
     content: string
   }) => {
     setShowAttachMenu(false)
-    const supabase = createClient()
 
-    const msgObj = {
-      id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    const tempId = `msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+    const optimisticMsg: ChatMessage = {
+      id: tempId,
       conversation_id: conversationId,
       sender_id: user.id,
       content: attachment.content,
@@ -449,33 +360,26 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
       created_at: new Date().toISOString(),
     }
 
-    setMessages((prev) => [...prev, msgObj])
-    saveLocalMessage(conversationId, msgObj)
+    setMessages((prev) => [...prev, optimisticMsg])
 
     try {
-      const { data } = await supabase
-        .from("messages")
-        .insert({
-          conversation_id: conversationId,
-          sender_id: user.id,
-          content: attachment.content,
-          message_type: attachment.message_type,
-          media_url: attachment.media_url,
-          is_encrypted: false,
-        })
-        .select()
+      const saved = await apiSendMessage({
+        conversation_id: conversationId,
+        sender_id: user.id,
+        content: attachment.content,
+        message_type: attachment.message_type,
+        media_url: attachment.media_url,
+        file_name: attachment.file_name,
+        file_size: attachment.file_size,
+        is_encrypted: false,
+      })
 
-      if (data && data[0]) {
-        const enriched = { ...data[0], file_name: attachment.file_name, file_size: attachment.file_size }
-        setMessages((prev) => prev.map((m) => (m.id === msgObj.id ? enriched : m)))
-        saveLocalMessage(conversationId, enriched)
+      if (saved && saved.id) {
+        setMessages((prev) => prev.map((m) => (m.id === tempId ? saved : m)))
       }
-
-      await supabase
-        .from("conversations")
-        .update({ updated_at: new Date().toISOString() })
-        .eq("id", conversationId)
-    } catch (e) {}
+    } catch (e) {
+      console.error("Error sending attachment:", e)
+    }
   }
 
   // Handle Photo or Video Selection (No file size limit)
@@ -519,7 +423,7 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
     e.target.value = ""
   }
 
-  // VOICE NOTE RECORDING (WhatsApp style)
+  // VOICE NOTE RECORDING (WhatsApp style with live waveform/timer)
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
@@ -542,7 +446,7 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
         setRecordingSeconds((prev) => prev + 1)
       }, 1000)
     } catch (err) {
-      alert("Microphone permission required to record voice messages.")
+      alert("Microphone permission required to record voice notes.")
     }
   }
 
@@ -593,19 +497,19 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
     return `${mins}:${secs < 10 ? "0" : ""}${secs}`
   }
 
-  const handleDeleteMessage = useCallback(async (messageId: string) => {
-    setMessages((prev) => prev.filter((m) => m.id !== messageId))
-    decryptedMessagesRef.current.delete(messageId)
-    deleteLocalMessage(conversationId, messageId)
-
-    const supabase = createClient()
-    try {
-      await supabase.from("messages").delete().eq("id", messageId)
-    } catch (err) {}
-  }, [conversationId])
+  const handleDeleteMessage = useCallback(
+    async (messageId: string) => {
+      setMessages((prev) => prev.filter((m) => m.id !== messageId))
+      decryptedMessagesRef.current.delete(messageId)
+      await apiDeleteMessage(messageId)
+    },
+    [],
+  )
 
   // CALL HANDLERS
   const handleCall = async (type: "voice" | "video") => {
+    if (!otherUser?.id) return
+
     try {
       const constraints = type === "video" ? { audio: true, video: true } : { audio: true, video: false }
       const stream = await navigator.mediaDevices.getUserMedia(constraints)
@@ -615,24 +519,20 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
       return
     }
 
-    const supabase = createClient()
     try {
-      await supabase.from("call_history").insert({
-        caller_id: user.id,
-        receiver_id: otherUser.id,
-        call_type: type,
-        status: "ringing",
+      await fetch("/api/chat/calls", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          caller_id: user.id,
+          receiver_id: otherUser.id,
+          call_type: type,
+        }),
       })
 
       setShowCallModal(true)
       setCallType(type)
-      setCallDuration(0)
       setIsCaller(true)
-
-      if (callTimerRef.current) clearInterval(callTimerRef.current)
-      callTimerRef.current = setInterval(() => {
-        setCallDuration((prev) => prev + 1)
-      }, 1000)
 
       signalingRef.current?.send({
         type: "call",
@@ -646,24 +546,16 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
   }
 
   const handleCallEnd = async (duration: number) => {
-    const supabase = createClient()
     try {
-      const { data: calls } = await supabase
-        .from("call_history")
-        .select("id")
-        .or(
-          `and(caller_id.eq.${user.id},receiver_id.eq.${otherUser?.id}),and(caller_id.eq.${otherUser?.id},receiver_id.eq.${user.id})`
-        )
-        .in("status", ["ringing", "active"])
-        .order("created_at", { ascending: false })
-        .limit(1)
-
-      if (calls && calls[0]) {
-        await supabase
-          .from("call_history")
-          .update({ status: "completed", duration_seconds: duration })
-          .eq("id", calls[0].id)
-      }
+      await fetch("/api/chat/calls", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "update",
+          status: "completed",
+          duration,
+        }),
+      })
 
       setActiveCall(null)
       setIsCaller(false)
@@ -681,21 +573,15 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
       return
     }
 
-    const supabase = createClient()
     try {
-      const { data: calls } = await supabase
-        .from("call_history")
-        .select("id")
-        .or(
-          `and(caller_id.eq.${incomingCall?.callerId},receiver_id.eq.${user.id}),and(caller_id.eq.${user.id},receiver_id.eq.${incomingCall?.callerId})`
-        )
-        .eq("status", "ringing")
-        .order("created_at", { ascending: false })
-        .limit(1)
-
-      if (calls && calls[0]) {
-        await supabase.from("call_history").update({ status: "active" }).eq("id", calls[0].id)
-      }
+      await fetch("/api/chat/calls", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "update",
+          status: "active",
+        }),
+      })
 
       setActiveCall({ type: incomingCall?.callType || "voice", startTime: Date.now() })
       setIncomingCall(null)
@@ -705,21 +591,15 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
   }
 
   const handleRejectCall = async () => {
-    const supabase = createClient()
     try {
-      const { data: calls } = await supabase
-        .from("call_history")
-        .select("id")
-        .or(
-          `and(caller_id.eq.${incomingCall?.callerId},receiver_id.eq.${user.id}),and(caller_id.eq.${user.id},receiver_id.eq.${incomingCall?.callerId})`
-        )
-        .eq("status", "ringing")
-        .order("created_at", { ascending: false })
-        .limit(1)
-
-      if (calls && calls[0]) {
-        await supabase.from("call_history").update({ status: "rejected" }).eq("id", calls[0].id)
-      }
+      await fetch("/api/chat/calls", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "update",
+          status: "rejected",
+        }),
+      })
 
       setIncomingCall(null)
       setIsCaller(false)
@@ -924,14 +804,14 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
                 size="sm"
                 variant="ghost"
                 onClick={cancelRecording}
-                className="text-muted-foreground hover:text-destructive h-8 px-2 text-xs"
+                className="text-muted-foreground hover:text-destructive h-8 px-2 text-xs cursor-pointer"
               >
                 <Trash2 className="w-4 h-4 mr-1" /> Cancel
               </Button>
               <Button
                 size="sm"
                 onClick={stopAndSendRecording}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white h-8 px-3 rounded-xl text-xs"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white h-8 px-3 rounded-xl text-xs cursor-pointer"
               >
                 <Send className="w-3.5 h-3.5 mr-1" /> Send Voice
               </Button>

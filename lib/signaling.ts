@@ -1,131 +1,86 @@
-import { createClient as createSupabaseClient } from "@/lib/supabase/client"
-
 type SignalingMessage = {
   type: string
   from?: string
   to?: string
   conversationId?: string
   payload?: any
+  sdp?: any
+  candidate?: any
+  callType?: string
+  fromName?: string
   [key: string]: any
 }
 
+const signalingListeners = new Map<string, Set<(msg: SignalingMessage) => void>>()
+
+// Global dispatcher to notify listeners for a given user
+export function dispatchSignalingMessage(userId: string, msg: SignalingMessage) {
+  const listeners = signalingListeners.get(userId)
+  if (listeners) {
+    listeners.forEach((fn) => {
+      try {
+        fn(msg)
+      } catch (err) {
+        console.warn("[signaling] listener error", err)
+      }
+    })
+  }
+}
+
 /**
- * Supabase-backed signaling client.
- * Uses a Postgres table `webrtc_signaling` to insert messages and subscribes to INSERTs
- * filtered by recipient. This allows running the app entirely on Vercel + Supabase.
+ * Universal signaling client.
+ * Dispatches via BroadcastChannel for same-origin tabs and /api/chat/signaling for cross-client/device delivery.
  */
 export function createSignaling(userId: string) {
-  const supabase = createSupabaseClient()
+  if (!signalingListeners.has(userId)) {
+    signalingListeners.set(userId, new Set())
+  }
 
-  const listeners: Array<(msg: SignalingMessage) => void> = []
+  let broadcastChannel: BroadcastChannel | null = null
+  if (typeof window !== "undefined" && "BroadcastChannel" in window) {
+    try {
+      broadcastChannel = new BroadcastChannel(`uchat_signaling_${userId}`)
+      broadcastChannel.onmessage = (event) => {
+        if (event.data) {
+          dispatchSignalingMessage(userId, event.data)
+        }
+      }
+    } catch (e) {}
+  }
 
   const addListener = (fn: (msg: SignalingMessage) => void) => {
-    listeners.push(fn)
+    signalingListeners.get(userId)?.add(fn)
     return () => {
-      const idx = listeners.indexOf(fn)
-      if (idx >= 0) listeners.splice(idx, 1)
+      signalingListeners.get(userId)?.delete(fn)
     }
   }
 
   const send = async (msg: SignalingMessage) => {
-    try {
-      const { data, error } = await supabase.from('webrtc_signaling').insert({
-        conversation_id: msg.conversationId || null,
-        from_id: msg.from || null,
-        to_id: msg.to || null,
-        type: msg.type,
-        payload: msg.payload || null,
-        sdp: msg.sdp || null,
-        candidate: msg.candidate || null,
-        call_type: msg.callType || null,
-        from_name: msg.fromName || null,
-      }).select()
-
-      if (error) {
-        console.warn('[v0] Signaling insert returned error', error)
-        // try fallback to serverless API (useful if RLS blocks client inserts)
-        try {
-          const res = await fetch('/api/signaling', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(msg),
-          })
-          const json = await res.json()
-          if (!res.ok) console.warn('[v0] fallback /api/signaling failed', json)
-          else console.log('[v0] fallback /api/signaling succeeded')
-        } catch (e) {
-          console.warn('[v0] fallback /api/signaling exception', e)
-        }
-      } else {
-        console.log('[v0] signaling insert success', { id: data && data[0] ? data[0].id : null, type: msg.type, to: msg.to })
-      }
-    } catch (err) {
-      console.warn('[v0] Signaling insert failed', err)
-      // fallback to serverless route
+    // 1. Post to BroadcastChannel if recipient is on same device
+    if (msg.to && typeof window !== "undefined" && "BroadcastChannel" in window) {
       try {
-        const res = await fetch('/api/signaling', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(msg),
-        })
-        const json = await res.json()
-        if (!res.ok) console.warn('[v0] fallback /api/signaling failed', json)
-        else console.log('[v0] fallback /api/signaling succeeded')
-      } catch (e) {
-        console.warn('[v0] fallback /api/signaling exception', e)
-      }
+        const targetBc = new BroadcastChannel(`uchat_signaling_${msg.to}`)
+        targetBc.postMessage(msg)
+        targetBc.close()
+      } catch (e) {}
+    }
+
+    // 2. Post to server endpoint for SSE delivery
+    try {
+      await fetch("/api/chat/signaling", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(msg),
+      })
+    } catch (err) {
+      console.warn("[signaling] send error", err)
     }
   }
 
-  // subscribe to new signaling rows intended for this user
-  const channel = supabase
-    .channel(`webrtc_signaling:${userId}`)
-    .on(
-      'postgres_changes',
-      {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'webrtc_signaling',
-        filter: `to_id=eq.${userId}`,
-      },
-      (payload) => {
-        try {
-          const newRow = payload.new || {}
-          // Minimal info to keep console manageable
-          console.info('[v0] signaling payload received', { type: newRow.type, from: newRow.from_id })
-          const msg: SignalingMessage = {
-            type: newRow.type,
-            from: newRow.from_id,
-            to: newRow.to_id,
-            conversationId: newRow.conversation_id,
-            payload: newRow.payload,
-            sdp: newRow.sdp || null,
-            candidate: newRow.candidate || null,
-            callType: newRow.call_type || null,
-            fromName: newRow.from_name || null,
-          }
-          listeners.forEach((l) => {
-            try {
-              l(msg)
-            } catch (err) {
-              console.warn('[v0] signaling listener error', err)
-            }
-          })
-        } catch (err) {
-          console.warn('[v0] signaling payload error', err)
-        }
-      },
-    )
-    .subscribe((status) => {
-      console.log('[v0] signaling subscription status:', status)
-    })
-
   const close = async () => {
     try {
-      await channel.unsubscribe()
-    } catch (err) {
-      // ignore
-    }
+      broadcastChannel?.close()
+    } catch (err) {}
   }
 
   return { send, addListener, close }
