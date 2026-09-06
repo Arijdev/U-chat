@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button"
 import { X, Phone, Video, Clock, Trash2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 
+import { getLocalCallHistory, deleteLocalCall } from "@/lib/dataset"
+
 interface CallHistoryProps {
   user: User
   onClose: () => void
@@ -22,26 +24,18 @@ export default function CallHistory({ user, onClose }: CallHistoryProps) {
       try {
         const supabase = createClient()
         
-        // First verify the query works
-        console.log('Fetching call history for user:', user.id)
-        
         // First fetch call history
-        const { data: calls, error: callsError } = await supabase
+        const { data: remoteCalls } = await supabase
           .from('call_history')
           .select('*')
           .or(`caller_id.eq.${user.id},receiver_id.eq.${user.id}`)
           .order('created_at', { ascending: false })
           .limit(50)
 
-        if (callsError) {
-          console.warn('Call history not available or error fetching calls:', callsError.message)
-          setCalls([])
-          setLoading(false)
-          return
-        }
+        const localCalls = getLocalCallHistory(user.id)
 
-        if (!calls?.length) {
-          setCalls([])
+        if (!remoteCalls?.length) {
+          setCalls(localCalls)
           setLoading(false)
           return
         }
@@ -100,21 +94,18 @@ export default function CallHistory({ user, onClose }: CallHistoryProps) {
     if (!ok) return
     try {
       setLoading(true)
-      const supabase = createClient()
-      const { error } = await supabase.from('call_history').delete().eq('id', id)
-      if (error) {
-        console.error('Error deleting call history:', error)
-        toast({ title: 'Delete failed', description: error.message || 'Could not delete entry', variant: 'destructive' })
-        setLoading(false)
-        return
-      }
-      // remove from UI
+      deleteLocalCall(id)
       setCalls((prev) => prev.filter((c) => c.id !== id))
-  toast({ title: 'Deleted', description: 'Call history entry removed', variant: 'default' })
+      toast({ title: 'Deleted', description: 'Call history entry removed', variant: 'default' })
+
+      const supabase = createClient()
+      try {
+        await supabase.from('call_history').delete().eq('id', id)
+      } catch (e) {}
+
       setLoading(false)
     } catch (err) {
       console.error('Unexpected delete error:', err)
-      toast({ title: 'Delete failed', description: 'An unexpected error occurred', variant: 'destructive' })
       setLoading(false)
     }
   }

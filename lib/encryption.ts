@@ -31,6 +31,13 @@ function base64ToBuffer(base64: string): Uint8Array {
   return bytes
 }
 
+async function deriveKey(conversationId: string, cryptoObj: Crypto, usages: KeyUsage[]): Promise<CryptoKey> {
+  const encoder = new TextEncoder()
+  // Generate a guaranteed 256-bit key using SHA-256 digest of conversationId
+  const keyBuffer = await cryptoObj.subtle.digest("SHA-256", encoder.encode(conversationId))
+  return cryptoObj.subtle.importKey("raw", keyBuffer, { name: "AES-GCM" }, false, usages)
+}
+
 export async function encryptMessage(message: string, conversationId: string): Promise<string> {
   if (!message || typeof message !== "string") return message
   const cryptoObj = getCrypto()
@@ -42,12 +49,11 @@ export async function encryptMessage(message: string, conversationId: string): P
     const encoder = new TextEncoder()
     const data = encoder.encode(message)
 
-    // Generate a random IV (Initialization Vector)
+    // Generate a random IV (Initialization Vector, 12 bytes standard for AES-GCM)
     const iv = cryptoObj.getRandomValues(new Uint8Array(12))
 
-    // Create a key from conversation ID (padded to 32 bytes for AES-256)
-    const keyData = encoder.encode(conversationId.substring(0, 32).padEnd(32, "0"))
-    const keyMaterial = await cryptoObj.subtle.importKey("raw", keyData, { name: "AES-GCM" }, false, ["encrypt"])
+    // Derive 256-bit key from conversation ID
+    const keyMaterial = await deriveKey(conversationId, cryptoObj, ["encrypt"])
 
     // Encrypt the message
     const encrypted = await cryptoObj.subtle.encrypt({ name: "AES-GCM", iv }, keyMaterial, data)
@@ -92,19 +98,25 @@ export async function decryptMessage(encryptedMessage: string, conversationId: s
     const iv = combined.slice(0, 12)
     const encrypted = combined.slice(12)
 
-    // Create a key from conversation ID (same as encryption)
-    const encoder = new TextEncoder()
-    const keyData = encoder.encode(conversationId.substring(0, 32).padEnd(32, "0"))
-    const keyMaterial = await cryptoObj.subtle.importKey("raw", keyData, { name: "AES-GCM" }, false, ["decrypt"])
-
-    // Decrypt the message
-    const decrypted = await cryptoObj.subtle.decrypt({ name: "AES-GCM", iv }, keyMaterial, encrypted)
-
-    // Convert back to string
-    const decoder = new TextDecoder()
-    return decoder.decode(decrypted)
+    // Try primary key derivation (SHA-256)
+    try {
+      const keyMaterial = await deriveKey(conversationId, cryptoObj, ["decrypt"])
+      const decrypted = await cryptoObj.subtle.decrypt({ name: "AES-GCM", iv }, keyMaterial, encrypted)
+      return new TextDecoder().decode(decrypted)
+    } catch (e) {
+      // Backward compatibility fallback: try legacy padded string key
+      try {
+        const encoder = new TextEncoder()
+        const legacyKeyData = encoder.encode(conversationId.substring(0, 32).padEnd(32, "0"))
+        const legacyKey = await cryptoObj.subtle.importKey("raw", legacyKeyData, { name: "AES-GCM" }, false, ["decrypt"])
+        const decrypted = await cryptoObj.subtle.decrypt({ name: "AES-GCM", iv }, legacyKey, encrypted)
+        return new TextDecoder().decode(decrypted)
+      } catch (err2) {
+        return encryptedMessage
+      }
+    }
   } catch (error) {
-    // If decryption fails (e.g. plain text message from earlier or system message), return original
+    // If decryption fails (e.g. plain text message from earlier), return original
     return encryptedMessage
   }
 }

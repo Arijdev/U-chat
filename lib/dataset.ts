@@ -299,3 +299,97 @@ export function listenToSyncEvents(callback: (type: string, payload: any) => voi
     window.removeEventListener("u_chat_local_sync", handleWindowMsg)
   }
 }
+
+// Call history fallback
+const STORAGE_KEY_CALLS = "u_chat_calls_history"
+
+export function getLocalCallHistory(userId: string): any[] {
+  if (typeof window === "undefined") return []
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_CALLS)
+    if (!raw) return []
+    const all: any[] = JSON.parse(raw)
+    const profiles = getKnownProfiles()
+    const profileMap = new Map(profiles.map((p) => [p.id, p]))
+
+    return all
+      .filter((c) => c.caller_id === userId || c.receiver_id === userId)
+      .map((c) => ({
+        ...c,
+        caller: profileMap.get(c.caller_id) || { display_name: "User", email: "user@example.com" },
+        receiver: profileMap.get(c.receiver_id) || { display_name: "User", email: "user@example.com" },
+      }))
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+  } catch (e) {
+    return []
+  }
+}
+
+export function saveLocalCall(call: any): void {
+  if (typeof window === "undefined") return
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_CALLS)
+    const all: any[] = raw ? JSON.parse(raw) : []
+    all.unshift(call)
+    localStorage.setItem(STORAGE_KEY_CALLS, JSON.stringify(all))
+    broadcastSyncEvent("call_inserted", call)
+  } catch (e) {}
+}
+
+export function deleteLocalCall(callId: string): void {
+  if (typeof window === "undefined") return
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_CALLS)
+    if (!raw) return
+    const all: any[] = JSON.parse(raw)
+    const filtered = all.filter((c) => c.id !== callId)
+    localStorage.setItem(STORAGE_KEY_CALLS, JSON.stringify(filtered))
+  } catch (e) {}
+}
+
+// Stories fallback
+const STORAGE_KEY_STORIES = "u_chat_stories"
+
+export function getLocalStories(): any[] {
+  if (typeof window === "undefined") return []
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_STORIES)
+    if (!raw) return []
+    const all: any[] = JSON.parse(raw)
+    const now = new Date().toISOString()
+    const valid = all.filter((s) => !s.expires_at || s.expires_at > now)
+    const profiles = getKnownProfiles()
+    const profileMap = new Map(profiles.map((p) => [p.id, p]))
+
+    return valid
+      .map((s) => ({
+        ...s,
+        user: profileMap.get(s.user_id) || { id: s.user_id, display_name: "User" },
+      }))
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+  } catch (e) {
+    return []
+  }
+}
+
+export function saveLocalStory(story: any): void {
+  if (typeof window === "undefined") return
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_STORIES)
+    const all: any[] = raw ? JSON.parse(raw) : []
+    all.unshift(story)
+    localStorage.setItem(STORAGE_KEY_STORIES, JSON.stringify(all))
+    broadcastSyncEvent("story_inserted", story)
+  } catch (e) {}
+}
+
+export function deleteLocalStory(storyId: string): void {
+  if (typeof window === "undefined") return
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_STORIES)
+    if (!raw) return
+    const all: any[] = JSON.parse(raw)
+    const filtered = all.filter((s) => s.id !== storyId)
+    localStorage.setItem(STORAGE_KEY_STORIES, JSON.stringify(filtered))
+  } catch (e) {}
+}

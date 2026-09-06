@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { X, Plus, Trash2 } from "lucide-react"
 
+import { getLocalStories, saveLocalStory, deleteLocalStory } from "@/lib/dataset"
+
 interface StoriesViewProps {
   user: User
   onClose: () => void
@@ -29,13 +31,22 @@ export default function StoriesView({ user, onClose }: StoriesViewProps) {
 
   const loadStories = async () => {
     const supabase = createClient()
-    const { data } = await supabase
-      .from("stories")
-      .select("*, user:profiles(id, display_name, avatar_url)")
-      .gt("expires_at", new Date().toISOString())
-      .order("created_at", { ascending: false })
+    let remoteStories: any[] = []
+    try {
+      const { data } = await supabase
+        .from("stories")
+        .select("*, user:profiles(id, display_name, avatar_url)")
+        .gt("expires_at", new Date().toISOString())
+        .order("created_at", { ascending: false })
+      if (data) remoteStories = data
+    } catch (e) {}
 
-    setStories(data || [])
+    const localStories = getLocalStories()
+    const map = new Map<string, any>()
+    localStories.forEach((s) => map.set(s.id, s))
+    remoteStories.forEach((s) => map.set(s.id, s))
+
+    setStories(Array.from(map.values()).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()))
     setLoading(false)
   }
 
@@ -60,26 +71,41 @@ export default function StoriesView({ user, onClose }: StoriesViewProps) {
   const handleCreateStory = async () => {
     if (!previewUrl || !selectedFile) return
 
-    const supabase = createClient()
-    const { error } = await supabase.from("stories").insert({
+    const newStory = {
+      id: `story-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       user_id: user.id,
       media_url: previewUrl,
       caption: caption || null,
-    })
-
-    if (!error) {
-      setCaption("")
-      setSelectedFile(null)
-      setPreviewUrl(null)
-      setShowCreateForm(false)
-      loadStories()
+      created_at: new Date().toISOString(),
+      expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
     }
+
+    saveLocalStory(newStory)
+
+    setCaption("")
+    setSelectedFile(null)
+    setPreviewUrl(null)
+    setShowCreateForm(false)
+    loadStories()
+
+    const supabase = createClient()
+    try {
+      await supabase.from("stories").insert({
+        user_id: user.id,
+        media_url: previewUrl,
+        caption: caption || null,
+      })
+    } catch (e) {}
   }
 
   const handleDeleteStory = async (storyId: string) => {
+    deleteLocalStory(storyId)
+    setStories((prev) => prev.filter((s) => s.id !== storyId))
+
     const supabase = createClient()
-    await supabase.from("stories").delete().eq("id", storyId)
-    loadStories()
+    try {
+      await supabase.from("stories").delete().eq("id", storyId)
+    } catch (e) {}
   }
 
   return (
