@@ -131,8 +131,9 @@ export default function ChatLayout({ user }: { user: User }) {
 
     // Realtime Supabase changes
     const supabase = createClient()
+    const channelName = `conversations-changes-${Date.now()}`
     const channel = supabase
-      .channel("conversations-changes")
+      .channel(channelName)
       .on(
         "postgres_changes",
         {
@@ -154,7 +155,9 @@ export default function ChatLayout({ user }: { user: User }) {
     })
 
     return () => {
-      channel.unsubscribe()
+      try {
+        supabase.removeChannel(channel)
+      } catch (e) {}
       stopListening()
     }
   }, [loadConversations])

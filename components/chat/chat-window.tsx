@@ -173,8 +173,9 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
       setHasMoreMessages(remoteMessages.length === 50)
       setLoading(false)
 
+      const channelName = `messages:${conversationId}:${Date.now()}`
       const channel = supabase
-        .channel(`messages:${conversationId}`)
+        .channel(channelName)
         .on(
           "postgres_changes",
           {
@@ -207,9 +208,7 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
             decryptedMessagesRef.current.delete(payload.old.id)
           },
         )
-        .subscribe((status) => {
-          console.log(" Subscription status:", status)
-        })
+        .subscribe()
 
       const stopLocalSync = listenToSyncEvents((type, payload) => {
         if (type === "message_inserted" && payload?.conversationId === conversationId) {
@@ -224,7 +223,9 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
       })
 
       unsubscribeRef.current = () => {
-        channel.unsubscribe()
+        try {
+          supabase.removeChannel(channel)
+        } catch (e) {}
         stopLocalSync()
       }
     }
@@ -238,9 +239,10 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
 
   useEffect(() => {
     const supabase = createClient()
+    const channelName = `calls:${user.id}:${Date.now()}`
 
     const channel = supabase
-      .channel(`calls:${user.id}`)
+      .channel(channelName)
       .on(
         "postgres_changes",
         {
@@ -287,12 +289,12 @@ export default function ChatWindow({ conversationId, user }: ChatWindowProps) {
           }
         },
       )
-      .subscribe((status) => {
-        console.log(" Call subscription status:", status)
-      })
+      .subscribe()
 
     callUnsubscribeRef.current = () => {
-      channel.unsubscribe()
+      try {
+        supabase.removeChannel(channel)
+      } catch (e) {}
     }
 
     return () => {
