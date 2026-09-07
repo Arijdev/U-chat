@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { addServerCall, updateServerCall, getServerCalls } from "@/lib/server-store"
+import { addServerCall, updateServerCall, getServerCalls, deleteServerCall, clearServerCalls } from "@/lib/server-store"
 
 export const dynamic = "force-dynamic"
 
@@ -48,6 +48,28 @@ export async function POST(req: NextRequest) {
     })
 
     return NextResponse.json(newCall)
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 })
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const { searchParams } = new URL(req.url)
+    const callId = searchParams.get("callId")
+    const userId = searchParams.get("userId")
+
+    if (callId) {
+      const ok = deleteServerCall(callId)
+      return NextResponse.json({ ok })
+    }
+
+    if (userId) {
+      const ok = clearServerCalls(userId)
+      return NextResponse.json({ ok })
+    }
+
+    return NextResponse.json({ error: "Missing callId or userId" }, { status: 400 })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }

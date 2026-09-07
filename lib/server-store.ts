@@ -638,6 +638,22 @@ export function getServerCalls(userId: string): any[] {
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
 }
 
+export function deleteServerCall(callId: string): boolean {
+  const initialLength = store.calls.length
+  store.calls = store.calls.filter((c) => c.id !== callId)
+  if (store.calls.length !== initialLength) {
+    saveStore()
+    return true
+  }
+  return false
+}
+
+export function clearServerCalls(userId: string): boolean {
+  store.calls = store.calls.filter((c) => c.caller_id !== userId && c.receiver_id !== userId)
+  saveStore()
+  return true
+}
+
 export function addServerSignaling(sig: Omit<ServerSignaling, "id" | "created_at">): ServerSignaling {
   const newSig: ServerSignaling = {
     id: `sig_${Date.now()}`,

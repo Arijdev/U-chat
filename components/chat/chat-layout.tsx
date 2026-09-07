@@ -495,8 +495,12 @@ export default function ChatLayout({ user }: { user: User }) {
 
         {/* TAB 9: CALLS */}
         {activeTab === "calls" && (
-          <div className="flex flex-1 overflow-hidden">
-            <CallHistory user={user} onClose={() => setActiveTab("chats")} />
+          <div className="flex flex-1 overflow-hidden w-full">
+            <CallHistory
+              user={user}
+              onClose={() => setActiveTab("chats")}
+              onStartCall={handleStartCall}
+            />
             <div className="hidden md:flex flex-1 items-center justify-center bg-[#f0f2f5] dark:bg-[#222e35] text-muted-foreground text-xs">
               Call history and logs are synced across your linked devices.
             </div>
