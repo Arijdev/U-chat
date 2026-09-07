@@ -458,7 +458,11 @@ export default function ChatSidebar({
                 {/* Avatar */}
                 <div className="w-11 h-11 rounded-full overflow-hidden bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-bold text-base shrink-0 shadow-xs">
                   {isGroup ? (
-                    <Users className="w-5 h-5 text-white" />
+                    conv.group_avatar ? (
+                      <img src={conv.group_avatar} alt={title} className="w-full h-full object-cover" />
+                    ) : (
+                      <Users className="w-5 h-5 text-white" />
+                    )
                   ) : otherParticipant?.avatar_url ? (
                     <img src={otherParticipant.avatar_url} alt={title} className="w-full h-full object-cover" />
                   ) : (

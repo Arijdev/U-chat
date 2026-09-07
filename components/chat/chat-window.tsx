@@ -20,10 +20,15 @@ import {
   Loader2,
   ArrowLeft,
   X,
+  Star,
+  MoreVertical,
+  Users,
 } from "lucide-react"
 import { encryptMessage, decryptMessage } from "@/lib/encryption"
 import { MessageBubble } from "./message-bubble"
 import { ContactInfoDrawer } from "./contact-info-drawer"
+import { StarredMessagesDrawer } from "./starred-messages-drawer"
+import { GroupInfoDrawer } from "./group-info-drawer"
 import {
   apiGetMessages,
   apiSendMessage,
@@ -51,7 +56,43 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
   const [searchInChat, setSearchInChat] = useState("")
   const [showSearch, setShowSearch] = useState(false)
   const [showContactInfo, setShowContactInfo] = useState(false)
+  const [showGroupInfo, setShowGroupInfo] = useState(false)
+  const [showStarredDrawer, setShowStarredDrawer] = useState(false)
+  const [showChatMenu, setShowChatMenu] = useState(false)
+  const chatMenuRef = useRef<HTMLDivElement>(null)
   const [replyingTo, setReplyingTo] = useState<{ id: string; content: string; sender_name: string } | null>(null)
+
+  const formatGroupMemberList = (group: any) => {
+    const memberIds = group.group_members || []
+    if (memberIds.length === 0) return "Group"
+    const names = memberIds.map((mId: string) => {
+      if (mId === user.id) return "You"
+      const found = (group.members || []).find((m: any) => m.id === mId)
+      if (found?.display_name) return found.display_name
+      const known = getKnownProfiles().find((p) => p.id === mId)
+      return known?.display_name || known?.email?.split("@")[0] || "Member"
+    })
+    return names.join(", ")
+  }
+
+  const getSenderDisplayName = (senderId: string) => {
+    if (senderId === user.id) return "You"
+    const found = (otherUser?.members || []).find((m: any) => m.id === senderId)
+    if (found?.display_name) return found.display_name
+    const known = getKnownProfiles().find((p) => p.id === senderId)
+    return known?.display_name || known?.email?.split("@")[0] || "Member"
+  }
+
+  useEffect(() => {
+    if (!showChatMenu) return
+    const handleClick = (e: MouseEvent) => {
+      if (chatMenuRef.current && !chatMenuRef.current.contains(e.target as Node)) {
+        setShowChatMenu(false)
+      }
+    }
+    window.addEventListener("mousedown", handleClick)
+    return () => window.removeEventListener("mousedown", handleClick)
+  }, [showChatMenu])
 
   // Voice recording state
   const [isRecording, setIsRecording] = useState(false)
@@ -111,23 +152,39 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
       const conv = convs.find((c) => c.id === conversationId)
 
       if (conv && isSubscribed) {
-        const otherId = conv.participant_1_id === user.id ? conv.participant_2_id : conv.participant_1_id
-        const profile =
-          conv.participant_1_id === user.id
-            ? conv.participant_2
-            : conv.participant_1
-
-        if (profile) {
-          setOtherUser(profile)
+        if (conv.is_group) {
+          const membersList = conv.members || []
+          setOtherUser({
+            id: conv.id,
+            is_group: true,
+            group_name: conv.group_name || "Group",
+            display_name: conv.group_name || "Group",
+            group_avatar: conv.group_avatar || "",
+            avatar_url: conv.group_avatar || "",
+            creator_id: conv.participant_1_id,
+            group_members: conv.group_members || [],
+            members: membersList,
+            status: `${(conv.group_members || []).length} members`,
+          })
         } else {
-          const fallback =
-            getProfileById(otherId) ||
-            getKnownProfiles().find((p) => p.id === otherId) || {
-              id: otherId,
-              display_name: otherId.slice(0, 8),
-              email: `${otherId.slice(0, 8)}@uchat.com`,
-            }
-          setOtherUser(fallback)
+          const otherId = conv.participant_1_id === user.id ? conv.participant_2_id : conv.participant_1_id
+          const profile =
+            conv.participant_1_id === user.id
+              ? conv.participant_2
+              : conv.participant_1
+
+          if (profile) {
+            setOtherUser(profile)
+          } else {
+            const fallback =
+              getProfileById(otherId) ||
+              getKnownProfiles().find((p) => p.id === otherId) || {
+                id: otherId,
+                display_name: otherId.slice(0, 8),
+                email: `${otherId.slice(0, 8)}@uchat.com`,
+              }
+            setOtherUser(fallback)
+          }
         }
       }
 
@@ -162,6 +219,16 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
           if (cId === conversationId && messageId) {
             setMessages((prev) => prev.filter((m) => m.id !== messageId))
             decryptedMessagesRef.current.delete(messageId)
+          }
+          break
+        }
+
+        case "message_updated": {
+          const updatedMsg = event.payload
+          if (updatedMsg && updatedMsg.conversation_id === conversationId) {
+            setMessages((prev) =>
+              prev.map((m) => (m.id === updatedMsg.id ? { ...m, ...updatedMsg } : m))
+            )
           }
           break
         }
@@ -342,7 +409,20 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
   const handleStar = async (messageId: string, isStarred: boolean) => {
     try {
       setMessages((prev) =>
-        prev.map((m) => (m.id === messageId ? { ...m, is_starred: isStarred } : m))
+        prev.map((m) => {
+          if (m.id === messageId) {
+            const currentStarredBy = Array.isArray(m.starred_by)
+              ? [...m.starred_by]
+              : m.is_starred
+              ? [user.id]
+              : []
+            const newStarredBy = isStarred
+              ? Array.from(new Set([...currentStarredBy, user.id]))
+              : currentStarredBy.filter((id: string) => id !== user.id)
+            return { ...m, is_starred: isStarred, starred_by: newStarredBy }
+          }
+          return m
+        })
       )
 
       await fetch("/api/chat/messages", {
@@ -352,9 +432,12 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
           action: "star",
           messageId,
           isStarred,
+          userId: user.id,
         }),
       })
-    } catch (e) {}
+    } catch (e) {
+      console.warn("Error updating star status:", e)
+    }
   }
 
   // Handle Photo or Video Selection (No file size limit)
@@ -526,34 +609,48 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
           )}
 
           <div
-            onClick={() => setShowContactInfo(!showContactInfo)}
+            onClick={() => {
+              if (otherUser?.is_group) {
+                setShowGroupInfo(!showGroupInfo)
+                setShowContactInfo(false)
+              } else {
+                setShowContactInfo(!showContactInfo)
+                setShowGroupInfo(false)
+              }
+            }}
             className="flex items-center gap-2.5 md:gap-3 min-w-0 cursor-pointer hover:opacity-85 transition-opacity"
-            title="Click to view contact info"
+            title={otherUser?.is_group ? "Click to view group info" : "Click to view contact info"}
           >
             <div className="relative shrink-0">
-            <div className="w-10 h-10 rounded-full overflow-hidden bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-semibold text-base shadow-xs">
-              {otherUser?.avatar_url ? (
-                <img
-                  src={otherUser.avatar_url}
-                  alt={otherUser.display_name || "Contact"}
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                otherUser?.display_name?.[0]?.toUpperCase() || otherUser?.email?.[0]?.toUpperCase() || "?"
+              <div className="w-10 h-10 rounded-full overflow-hidden bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-semibold text-base shadow-xs">
+                {otherUser?.avatar_url || otherUser?.group_avatar ? (
+                  <img
+                    src={otherUser.avatar_url || otherUser.group_avatar}
+                    alt={otherUser.display_name || "Group"}
+                    className="w-full h-full object-cover"
+                  />
+                ) : otherUser?.is_group ? (
+                  <Users className="w-5 h-5 text-white" />
+                ) : (
+                  otherUser?.display_name?.[0]?.toUpperCase() || otherUser?.email?.[0]?.toUpperCase() || "?"
+                )}
+              </div>
+              {!otherUser?.is_group && (
+                <span className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 rounded-full border-2 border-white dark:border-[#202c33]" />
               )}
             </div>
-            <span className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 rounded-full border-2 border-white dark:border-[#202c33]" />
-          </div>
-          <div className="min-w-0">
-            <p className="font-semibold text-foreground text-sm md:text-base truncate leading-tight">
-              {otherUser?.display_name || otherUser?.email?.split("@")[0] || "Chat"}
-            </p>
-            <p className="text-[11px] text-emerald-600 dark:text-emerald-400 truncate font-medium">
-              {otherUser?.status || "online"}
-            </p>
+            <div className="min-w-0">
+              <p className="font-semibold text-foreground text-sm md:text-base truncate leading-tight">
+                {otherUser?.display_name || otherUser?.email?.split("@")[0] || "Chat"}
+              </p>
+              <p className="text-[11px] text-muted-foreground truncate font-normal">
+                {otherUser?.is_group
+                  ? formatGroupMemberList(otherUser)
+                  : (otherUser?.status || "online")}
+              </p>
+            </div>
           </div>
         </div>
-      </div>
 
       {/* WhatsApp Call & Action Buttons */}
         <div className="flex items-center gap-1 shrink-0">
@@ -584,6 +681,81 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
           >
             <Search className="w-4 h-4" />
           </Button>
+
+          {/* WhatsApp Chat Options (3-dots) Menu */}
+          <div className="relative" ref={chatMenuRef}>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-muted-foreground hover:text-foreground hover:bg-muted/50 h-9 w-9 p-0 rounded-full cursor-pointer"
+              onClick={() => setShowChatMenu(!showChatMenu)}
+              title="Chat options"
+            >
+              <MoreVertical className="w-4 h-4" />
+            </Button>
+
+            {showChatMenu && (
+              <div
+                className="absolute right-0 top-10 w-52 bg-card text-card-foreground border border-border rounded-xl shadow-xl py-1.5 z-50 animate-in fade-in-50 zoom-in-95 select-none"
+                onClick={() => setShowChatMenu(false)}
+              >
+                <button
+                  onClick={() => {
+                    if (otherUser?.is_group) {
+                      setShowGroupInfo(true)
+                      setShowContactInfo(false)
+                    } else {
+                      setShowContactInfo(true)
+                      setShowGroupInfo(false)
+                    }
+                    setShowStarredDrawer(false)
+                  }}
+                  className="w-full flex items-center gap-3 px-4 py-2.5 text-xs hover:bg-muted/80 text-left cursor-pointer transition-colors"
+                >
+                  <span>{otherUser?.is_group ? "Group info" : "Contact info"}</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setShowStarredDrawer(true)
+                    setShowContactInfo(false)
+                  }}
+                  className="w-full flex items-center gap-3 px-4 py-2.5 text-xs hover:bg-muted/80 text-left cursor-pointer transition-colors text-emerald-600 dark:text-emerald-400 font-medium"
+                >
+                  <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
+                  <span>Starred messages</span>
+                </button>
+                <button
+                  onClick={() => setShowSearch(true)}
+                  className="w-full flex items-center gap-3 px-4 py-2.5 text-xs hover:bg-muted/80 text-left cursor-pointer transition-colors"
+                >
+                  <span>Search messages</span>
+                </button>
+                <div className="border-t border-border/50 my-1" />
+                <button
+                  onClick={async () => {
+                    if (window.confirm("Clear all messages in this chat?")) {
+                      for (const m of messages) {
+                        await apiDeleteMessage(m.id)
+                      }
+                      setMessages([])
+                    }
+                  }}
+                  className="w-full flex items-center gap-3 px-4 py-2.5 text-xs text-destructive hover:bg-destructive/10 text-left cursor-pointer transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>Clear chat</span>
+                </button>
+                {onBack && (
+                  <button
+                    onClick={onBack}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-xs hover:bg-muted/80 text-left cursor-pointer transition-colors border-t border-border/50"
+                  >
+                    <span>Close chat</span>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -638,6 +810,8 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
               msg={msg}
               isOwn={msg.sender_id === user.id}
               currentUserId={user.id}
+              isGroup={Boolean(otherUser?.is_group)}
+              senderName={getSenderDisplayName(msg.sender_id)}
               onGetDecrypted={getDecryptedContent}
               onDelete={handleDeleteMessage}
               onReply={setReplyingTo}
@@ -838,12 +1012,57 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
         onVoiceCall={() => handleCall("voice")}
         onVideoCall={() => handleCall("video")}
         onSearchInChat={() => setShowSearch(true)}
+        onOpenStarredMessages={() => {
+          setShowContactInfo(false)
+          setShowStarredDrawer(true)
+        }}
         onClearChat={async () => {
           for (const m of messages) {
             await apiDeleteMessage(m.id)
           }
           setMessages([])
         }}
+      />
+    )}
+
+    {/* WhatsApp Group Info Drawer */}
+    {showGroupInfo && otherUser?.is_group && (
+      <GroupInfoDrawer
+        user={user}
+        group={otherUser}
+        messages={messages}
+        onClose={() => setShowGroupInfo(false)}
+        onOpenStarredMessages={() => {
+          setShowGroupInfo(false)
+          setShowStarredDrawer(true)
+        }}
+        onGroupUpdated={(updated) => {
+          setOtherUser((prev: any) => ({
+            ...prev,
+            ...updated,
+            display_name: updated.group_name || prev.display_name,
+            group_name: updated.group_name || prev.group_name,
+            group_members: updated.group_members || prev.group_members,
+            members: updated.members || prev.members,
+            status: `${(updated.group_members || prev.group_members || []).length} members`,
+          }))
+        }}
+        onLeaveGroup={() => {
+          setShowGroupInfo(false)
+          onBack?.()
+        }}
+      />
+    )}
+
+
+    {/* WhatsApp In-Chat Starred Messages Drawer */}
+    {showStarredDrawer && (
+      <StarredMessagesDrawer
+        user={user}
+        conversationId={conversationId}
+        conversationTitle={otherUser?.display_name || otherUser?.email?.split("@")[0] || "Chat"}
+        onClose={() => setShowStarredDrawer(false)}
+        onSelectConversation={() => setShowStarredDrawer(false)}
       />
     )}
   </div>

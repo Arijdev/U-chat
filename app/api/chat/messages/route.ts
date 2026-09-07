@@ -16,9 +16,10 @@ export async function GET(req: NextRequest) {
   const starredUserId = searchParams.get("starredUserId")
 
   if (starredUserId) {
-    const starred = getStarredMessages(starredUserId)
+    const starred = getStarredMessages(starredUserId, conversationId)
     return NextResponse.json(starred)
   }
+
 
   if (!conversationId) {
     return NextResponse.json({ error: "Missing conversationId" }, { status: 400 })
@@ -54,9 +55,10 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "star" && messageId !== undefined && isStarred !== undefined) {
-      const updated = toggleServerMessageStar(messageId, Boolean(isStarred))
+      const updated = toggleServerMessageStar(messageId, Boolean(isStarred), userId)
       return NextResponse.json(updated || { error: "Message not found" })
     }
+
 
     if (!conversation_id || !sender_id) {
       return NextResponse.json({ error: "Missing required message fields" }, { status: 400 })

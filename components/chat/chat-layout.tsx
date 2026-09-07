@@ -57,14 +57,31 @@ export default function ChatLayout({ user }: { user: User }) {
 
   // 1. Register current user on the backend server and local store
   useEffect(() => {
+    const isBase64Avatar = user.user_metadata?.avatar_url?.startsWith("data:")
+    const cleanAvatar = isBase64Avatar
+      ? `/api/chat/avatar?userId=${user.id}`
+      : user.user_metadata?.avatar_url || ""
+
     const userData = {
       id: user.id,
       email: user.email || "",
       display_name: user.user_metadata?.display_name || user.email?.split("@")[0] || "User",
-      avatar_url: user.user_metadata?.avatar_url || "",
+      avatar_url: cleanAvatar,
     }
     apiRegisterUser(userData)
     registerProfile(userData)
+
+    // Self-healing: if Supabase metadata had a base64 photo, overwrite it with the clean URL
+    if (isBase64Avatar) {
+      import("@/lib/supabase/client").then(({ createClient }) => {
+        const supabase = createClient()
+        supabase.auth.updateUser({
+          data: {
+            avatar_url: cleanAvatar,
+          },
+        }).catch(() => {})
+      })
+    }
   }, [user])
 
   const loadConversations = useCallback(async () => {
@@ -419,7 +436,7 @@ export default function ChatLayout({ user }: { user: User }) {
 
         {/* TAB 6: STARRED MESSAGES */}
         {activeTab === "starred" && (
-          <div className="flex flex-1 overflow-hidden">
+          <>
             <StarredMessagesDrawer
               user={user}
               onClose={() => setActiveTab("chats")}
@@ -428,10 +445,19 @@ export default function ChatLayout({ user }: { user: User }) {
                 setSelectedConversation(convId)
               }}
             />
-            <div className="hidden md:flex flex-1 items-center justify-center bg-[#f0f2f5] dark:bg-[#222e35] text-muted-foreground text-xs">
-              Select a starred message to jump directly to its conversation.
-            </div>
-          </div>
+            {selectedConversation ? (
+              <ChatWindow
+                conversationId={selectedConversation}
+                user={user}
+                onBack={() => setSelectedConversation(null)}
+                onStartCall={handleStartCall}
+              />
+            ) : (
+              <div className="hidden md:flex flex-1 items-center justify-center bg-[#f0f2f5] dark:bg-[#222e35] text-muted-foreground text-xs">
+                Select a starred message to jump directly to its conversation.
+              </div>
+            )}
+          </>
         )}
 
         {/* TAB 7: ARCHIVED CHATS */}

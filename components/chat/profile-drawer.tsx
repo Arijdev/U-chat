@@ -90,14 +90,15 @@ export function ProfileDrawer({
         display_name: trimmedName,
       })
 
-      // 3. Update Supabase Auth user metadata
+      // 3. Update Supabase Auth user metadata (ONLY safe URLs, NEVER base64 data URLs in cookies)
       try {
         const supabase = createClient()
+        const safeAvatar = finalAvatar && finalAvatar.startsWith("data:") ? `/api/chat/avatar?userId=${user.id}` : finalAvatar
         await supabase.auth.updateUser({
           data: {
             display_name: trimmedName,
             status: trimmedStatus,
-            avatar_url: finalAvatar,
+            avatar_url: safeAvatar,
           },
         })
       } catch (e) {}
@@ -139,9 +140,29 @@ export function ProfileDrawer({
     const reader = new FileReader()
     reader.onload = async (event) => {
       const dataUrl = event.target?.result as string
-      setAvatarUrl(dataUrl)
       setShowPhotoOptions(false)
-      await saveUpdates({ avatar_url: dataUrl })
+      setSaving(true)
+
+      try {
+        // Upload to server-side avatar storage
+        const res = await fetch("/api/chat/avatar", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: user.id, dataUrl }),
+        })
+        const data = await res.json()
+        const cleanAvatarUrl = data.avatar_url || `/api/chat/avatar?userId=${user.id}&t=${Date.now()}`
+
+        setAvatarUrl(cleanAvatarUrl)
+        await saveUpdates({ avatar_url: cleanAvatarUrl })
+      } catch (err) {
+        console.error("Error saving avatar:", err)
+        // Fallback save to server store
+        setAvatarUrl(dataUrl)
+        await saveUpdates({ avatar_url: dataUrl })
+      } finally {
+        setSaving(false)
+      }
     }
     reader.readAsDataURL(file)
     e.target.value = ""

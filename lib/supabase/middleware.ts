@@ -3,48 +3,15 @@ import { NextResponse, type NextRequest } from "next/server"
 import { getSupabaseUrl, getSupabaseAnonKey } from "@/lib/env"
 
 export async function updateSession(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({
-    request,
-  })
+  const response = NextResponse.next({ request })
 
-  const supabase = createServerClient(
-    getSupabaseUrl(),
-    getSupabaseAnonKey(),
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll()
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
-          supabaseResponse = NextResponse.next({
-            request,
-          })
-          cookiesToSet.forEach(({ name, value, options }) => supabaseResponse.cookies.set(name, value, options))
-        },
-      },
-    },
-  )
-
-  try {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-
-    if (
-      request.nextUrl.pathname !== "/" &&
-      request.nextUrl.pathname !== "/chat" &&
-      !user &&
-      !request.nextUrl.pathname.startsWith("/auth") &&
-      !request.nextUrl.pathname.startsWith("/api")
-    ) {
-      const url = request.nextUrl.clone()
-      url.pathname = "/auth/login"
-      return NextResponse.redirect(url)
+  // Clean any bloated cookies that cause ERR_RESPONSE_HEADERS_TOO_BIG and HTTP 431
+  for (const c of request.cookies.getAll()) {
+    if (c.name.startsWith("sb-") && c.name.includes("auth-token")) {
+      response.cookies.delete(c.name)
     }
-  } catch (err) {
-    console.warn("Session retrieval failed in middleware, continuing gracefully:", err)
   }
 
-  return supabaseResponse
+  return response
 }
+

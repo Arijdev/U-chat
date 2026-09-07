@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { MessageSquare, ArrowLeft } from "lucide-react"
 import { ThemeToggle } from "@/components/theme-toggle"
 
@@ -18,6 +18,17 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const router = useRouter()
+
+  useEffect(() => {
+    if (typeof document !== "undefined") {
+      document.cookie.split(";").forEach((c) => {
+        const name = c.split("=")[0].trim()
+        if (name.startsWith("sb-") && name.includes("auth-token")) {
+          document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`
+        }
+      })
+    }
+  }, [])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()

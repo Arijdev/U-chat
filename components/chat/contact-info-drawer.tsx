@@ -13,6 +13,7 @@ import {
   ImageIcon,
   Download,
   ChevronRight,
+  Star,
 } from "lucide-react"
 
 interface ContactInfoDrawerProps {
@@ -28,6 +29,7 @@ interface ContactInfoDrawerProps {
   onVoiceCall: () => void
   onVideoCall: () => void
   onSearchInChat: () => void
+  onOpenStarredMessages?: () => void
   onClearChat?: () => void
 }
 
@@ -38,6 +40,7 @@ export function ContactInfoDrawer({
   onVoiceCall,
   onVideoCall,
   onSearchInChat,
+  onOpenStarredMessages,
   onClearChat,
 }: ContactInfoDrawerProps) {
   const [activeTab, setActiveTab] = useState<"info" | "media">("info")
@@ -128,6 +131,27 @@ export function ContactInfoDrawer({
             {contact.status || "Hey there! I am using Arixo."}
           </p>
         </div>
+
+        {/* Starred Messages Section */}
+        {onOpenStarredMessages && (
+          <div className="bg-white dark:bg-[#202c33] shadow-2xs border-y border-border/40">
+            <button
+              onClick={onOpenStarredMessages}
+              className="w-full flex items-center justify-between p-4 hover:bg-muted/40 transition-colors cursor-pointer text-left"
+            >
+              <div className="flex items-center gap-3">
+                <Star className="w-5 h-5 text-amber-500 fill-amber-500 shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-foreground">Starred Messages</p>
+                  <p className="text-xs text-muted-foreground">
+                    {messages.filter((m) => m.is_starred || (Array.isArray(m.starred_by) && m.starred_by.length > 0)).length} starred in this chat
+                  </p>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-muted-foreground" />
+            </button>
+          </div>
+        )}
 
         {/* Media, Links & Docs Section */}
         <div className="bg-white dark:bg-[#202c33] p-4 shadow-2xs border-y border-border/40 space-y-3">

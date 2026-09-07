@@ -21,6 +21,9 @@ export default function ChatPage() {
         if (!mounted) return
 
         if (user) {
+          if (user.user_metadata?.avatar_url && user.user_metadata.avatar_url.startsWith("data:")) {
+            user.user_metadata.avatar_url = `/api/chat/avatar?userId=${user.id}`
+          }
           setUser(user)
           setLoading(false)
           return
@@ -31,6 +34,9 @@ export default function ChatPage() {
         if (!mounted) return
 
         if (session?.user) {
+          if (session.user.user_metadata?.avatar_url && session.user.user_metadata.avatar_url.startsWith("data:")) {
+            session.user.user_metadata.avatar_url = `/api/chat/avatar?userId=${session.user.id}`
+          }
           setUser(session.user)
           setLoading(false)
         } else {

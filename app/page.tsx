@@ -14,6 +14,15 @@ export default function Home() {
   const router = useRouter()
 
   useEffect(() => {
+    if (typeof document !== "undefined") {
+      document.cookie.split(";").forEach((c) => {
+        const name = c.split("=")[0].trim()
+        if (name.startsWith("sb-") && name.includes("auth-token")) {
+          document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`
+        }
+      })
+    }
+
     const checkSession = async () => {
       const supabase = createClient()
       const { data } = await supabase.auth.getUser()
@@ -25,6 +34,7 @@ export default function Home() {
     }
     checkSession()
   }, [router])
+
 
   return (
     <div className="min-h-screen bg-[#d1d7db] dark:bg-[#0c1317] flex flex-col justify-between font-sans selection:bg-emerald-500 selection:text-white">

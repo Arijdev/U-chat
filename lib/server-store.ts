@@ -42,6 +42,7 @@ export interface ServerMessage {
   }
   reactions?: Record<string, string[]> // emoji -> [userId1, userId2]
   is_starred?: boolean
+  starred_by?: string[]
   created_at: string
 }
 
@@ -266,14 +267,73 @@ export function getServerConversations(userId: string): ServerConversation[] {
   }
 
   return store.conversations
-    .filter((c) => c.participant_1_id === userId || c.participant_2_id === userId)
+    .filter(
+      (c) =>
+        c.participant_1_id === userId ||
+        c.participant_2_id === userId ||
+        (c.is_group && Array.isArray(c.group_members) && c.group_members.includes(userId))
+    )
     .map((c) => ({
       ...c,
       participant_1: userMap.get(c.participant_1_id) || { id: c.participant_1_id, email: "user1@example.com", display_name: "User 1" },
       participant_2: userMap.get(c.participant_2_id) || { id: c.participant_2_id, email: "user2@example.com", display_name: "User 2" },
+      members:
+        c.is_group && Array.isArray(c.group_members)
+          ? c.group_members.map((mId) => userMap.get(mId) || { id: mId, email: "", display_name: "Member" })
+          : undefined,
     }))
     .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
 }
+
+export function addGroupMembers(groupId: string, newMemberIds: string[]): ServerConversation | null {
+  const conv = store.conversations.find((c) => c.id === groupId && c.is_group)
+  if (!conv) return null
+
+  const existing = new Set(conv.group_members || [conv.participant_1_id])
+  newMemberIds.forEach((id) => existing.add(id))
+  conv.group_members = Array.from(existing)
+  conv.updated_at = new Date().toISOString()
+  saveStore()
+
+  conv.group_members.forEach((mId) => {
+    notifyUser(mId, { type: "conversation_updated", payload: conv })
+  })
+
+  return conv
+}
+
+export function removeGroupMember(groupId: string, memberIdToRemove: string): ServerConversation | null {
+  const conv = store.conversations.find((c) => c.id === groupId && c.is_group)
+  if (!conv) return null
+
+  const notifyList = [...(conv.group_members || [])]
+  conv.group_members = (conv.group_members || []).filter((id) => id !== memberIdToRemove)
+  conv.updated_at = new Date().toISOString()
+  saveStore()
+
+  notifyList.forEach((mId) => {
+    notifyUser(mId, { type: "conversation_updated", payload: conv })
+  })
+
+  return conv
+}
+
+export function updateGroupDetails(groupId: string, updates: { name?: string; avatar_url?: string }): ServerConversation | null {
+  const conv = store.conversations.find((c) => c.id === groupId && c.is_group)
+  if (!conv) return null
+
+  if (updates.name) conv.group_name = updates.name.trim()
+  if (updates.avatar_url !== undefined) conv.group_avatar = updates.avatar_url
+  conv.updated_at = new Date().toISOString()
+  saveStore()
+
+  ;(conv.group_members || []).forEach((mId) => {
+    notifyUser(mId, { type: "conversation_updated", payload: conv })
+  })
+
+  return conv
+}
+
 
 export function createServerConversation(participant1Id: string, participant2Id: string): ServerConversation {
   // Check existing
@@ -378,9 +438,23 @@ export function toggleServerMessageReaction(messageId: string, emoji: string, us
   return msg
 }
 
-export function toggleServerMessageStar(messageId: string, isStarred: boolean): ServerMessage | null {
+export function toggleServerMessageStar(messageId: string, isStarred: boolean, userId?: string): ServerMessage | null {
   const msg = store.messages.find((m) => m.id === messageId)
   if (!msg) return null
+
+  if (!Array.isArray(msg.starred_by)) {
+    msg.starred_by = msg.is_starred ? [userId || msg.sender_id] : []
+  }
+
+  if (userId) {
+    if (isStarred) {
+      if (!msg.starred_by.includes(userId)) {
+        msg.starred_by.push(userId)
+      }
+    } else {
+      msg.starred_by = msg.starred_by.filter((id) => id !== userId)
+    }
+  }
 
   msg.is_starred = isStarred
   saveStore()
@@ -389,13 +463,16 @@ export function toggleServerMessageStar(messageId: string, isStarred: boolean): 
   if (conv) {
     notifyUser(conv.participant_1_id, { type: "message_updated", payload: msg })
     notifyUser(conv.participant_2_id, { type: "message_updated", payload: msg })
+    if (conv.group_members) {
+      conv.group_members.forEach((mId) => notifyUser(mId, { type: "message_updated", payload: msg }))
+    }
   }
 
   return msg
 }
 
-export function getStarredMessages(userId: string): ServerMessage[] {
-  // Get all messages from conversations involving this user that have is_starred: true
+export function getStarredMessages(userId: string, conversationId?: string | null): ServerMessage[] {
+  // Get all messages from conversations involving this user that have is_starred: true or are in starred_by
   const userConvIds = new Set(
     store.conversations
       .filter((c) => c.participant_1_id === userId || c.participant_2_id === userId || c.group_members?.includes(userId))
@@ -403,7 +480,13 @@ export function getStarredMessages(userId: string): ServerMessage[] {
   )
 
   return store.messages
-    .filter((m) => userConvIds.has(m.conversation_id) && m.is_starred)
+    .filter((m) => {
+      if (conversationId && m.conversation_id !== conversationId) return false
+      const isStarredForUser =
+        (Array.isArray(m.starred_by) && m.starred_by.includes(userId)) ||
+        (m.is_starred && (userConvIds.has(m.conversation_id) || m.sender_id === userId))
+      return isStarredForUser
+    })
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
 }
 
