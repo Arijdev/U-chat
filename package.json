@@ -4,9 +4,9 @@
   "private": true,
   "scripts": {
     "build": "next build",
-    "dev": "node --max-http-header-size=65536 ./node_modules/next/dist/bin/next dev",
+    "dev": "node run-dev.js",
     "lint": "tsc --noEmit",
-    "start": "node --max-http-header-size=65536 ./node_modules/next/dist/bin/next start"
+    "start": "node run-start.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

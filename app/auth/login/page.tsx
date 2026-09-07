@@ -31,7 +31,7 @@ export default function LoginPage() {
         password,
       })
       if (error) throw error
-      router.push("/chat")
+      window.location.href = "/chat"
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : "An error occurred during sign in")
     } finally {
