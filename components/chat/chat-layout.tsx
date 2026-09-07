@@ -49,6 +49,7 @@ export default function ChatLayout({ user }: { user: User }) {
   const [conversations, setConversations] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [showProfileDrawer, setShowProfileDrawer] = useState(false)
+  const [metaAiInitialPrompt, setMetaAiInitialPrompt] = useState<string | null>(null)
 
   // Global call state
   const [activeCall, setActiveCall] = useState<ActiveCallData | null>(null)
@@ -326,15 +327,20 @@ export default function ChatLayout({ user }: { user: User }) {
   }
 
   const isDetailActive = Boolean(selectedConversation && activeTab === "chats")
+  const hideMobileNav = isDetailActive || activeTab === "meta_ai" || activeTab === "stories"
 
   return (
-    <div className="flex h-screen bg-background text-foreground w-full overflow-hidden relative pb-14 md:pb-0">
+    <div className={`flex h-[100dvh] bg-background text-foreground w-full overflow-hidden relative ${hideMobileNav ? "pb-0" : "pb-14 md:pb-0"}`}>
       {/* 1. Left Vertical Navigation Rail (Desktop) & Bottom Navigation Bar (Mobile) */}
       <NavRail
         user={user}
         activeTab={activeTab}
+        hideMobileNav={hideMobileNav}
         onSelectTab={(tab) => {
           setActiveTab(tab)
+          if (tab !== "meta_ai") {
+            setMetaAiInitialPrompt(null)
+          }
           if (tab !== "chats") {
             setSelectedConversation(null)
           }
@@ -356,6 +362,10 @@ export default function ChatLayout({ user }: { user: User }) {
               }}
               onShowStories={() => setActiveTab("stories")}
               onShowCallHistory={() => setActiveTab("calls")}
+              onOpenMetaAi={(prompt?: string) => {
+                setMetaAiInitialPrompt(prompt || null)
+                setActiveTab("meta_ai")
+              }}
               loading={loading}
               className={isDetailActive ? "hidden md:flex" : "flex"}
             />
@@ -419,7 +429,14 @@ export default function ChatLayout({ user }: { user: User }) {
 
         {/* TAB 5: META AI */}
         {activeTab === "meta_ai" && (
-          <MetaAiView user={user} onClose={() => setActiveTab("chats")} />
+          <MetaAiView
+            user={user}
+            initialPrompt={metaAiInitialPrompt}
+            onClose={() => {
+              setMetaAiInitialPrompt(null)
+              setActiveTab("chats")
+            }}
+          />
         )}
 
         {/* TAB 6: STARRED MESSAGES */}

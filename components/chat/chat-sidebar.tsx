@@ -19,6 +19,7 @@ import {
   Archive,
   Check,
   X,
+  Sparkles,
 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { ThemeToggle } from "@/components/theme-toggle"
@@ -43,6 +44,7 @@ interface ChatSidebarProps {
   onSelectConversation: (id: string) => void
   onShowStories: () => void
   onShowCallHistory: () => void
+  onOpenMetaAi?: (prompt?: string) => void
   loading: boolean
   className?: string
 }
@@ -56,6 +58,7 @@ export default function ChatSidebar({
   onSelectConversation,
   onShowStories,
   onShowCallHistory,
+  onOpenMetaAi,
   loading,
   className,
 }: ChatSidebarProps) {
@@ -293,6 +296,21 @@ export default function ChatSidebar({
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-bold text-foreground">Chats</h1>
           <div className="flex items-center gap-1">
+            {onOpenMetaAi && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => onOpenMetaAi()}
+                className="text-muted-foreground hover:text-purple-600 h-8 w-8 p-0 rounded-full cursor-pointer transition-transform hover:scale-105"
+                title="Ask Meta AI"
+              >
+                <div className="w-5.5 h-5.5 rounded-full bg-gradient-to-tr from-blue-500 via-purple-500 to-emerald-400 p-0.5 flex items-center justify-center shadow-xs">
+                  <div className="w-full h-full rounded-full bg-background flex items-center justify-center">
+                    <Sparkles className="w-3 h-3 text-purple-500" />
+                  </div>
+                </div>
+              </Button>
+            )}
             <Button
               size="sm"
               variant="ghost"
@@ -319,7 +337,7 @@ export default function ChatSidebar({
         <div className="relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
-            placeholder="Search or start new chat"
+            placeholder="Ask Meta AI or Search..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-9 h-9 border-0 bg-background text-xs rounded-xl shadow-none focus-visible:ring-1 focus-visible:ring-emerald-500"
@@ -404,6 +422,35 @@ export default function ChatSidebar({
             </div>
           )}
         </div>
+      )}
+
+      {/* Ask Meta AI prompt row when searching */}
+      {searchQuery.trim().length > 0 && onOpenMetaAi && (
+        <button
+          onClick={() => {
+            const q = searchQuery.trim()
+            setSearchQuery("")
+            onOpenMetaAi(q)
+          }}
+          className="w-full px-3.5 py-2.5 bg-purple-500/10 hover:bg-purple-500/15 border-b border-purple-500/20 flex items-center gap-3 transition-colors cursor-pointer text-left shrink-0 active:scale-[0.99]"
+        >
+          <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-500 via-purple-500 to-emerald-400 p-0.5 shrink-0 flex items-center justify-center shadow-xs">
+            <div className="w-full h-full rounded-full bg-card flex items-center justify-center">
+              <Sparkles className="w-4 h-4 text-purple-500" />
+            </div>
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-semibold text-foreground">Ask Meta AI</span>
+              <span className="text-[9px] bg-purple-500/20 text-purple-600 dark:text-purple-300 font-bold px-1.5 py-0.2 rounded-full">
+                AI
+              </span>
+            </div>
+            <p className="text-[11px] text-muted-foreground truncate mt-0.5">
+              &ldquo;{searchQuery.trim()}&rdquo;
+            </p>
+          </div>
+        </button>
       )}
 
       {/* Archived Chats Row */}
@@ -601,6 +648,19 @@ export default function ChatSidebar({
             if (updated.avatar_url !== undefined) setCurrentAvatarUrl(updated.avatar_url)
           }}
         />
+      )}
+
+      {/* Floating Meta AI Ring Button on Mobile */}
+      {onOpenMetaAi && (
+        <button
+          onClick={() => onOpenMetaAi()}
+          className="md:hidden fixed bottom-20 right-5 z-20 w-12 h-12 rounded-full bg-gradient-to-tr from-blue-500 via-purple-500 to-emerald-400 p-0.5 shadow-xl hover:scale-105 active:scale-95 transition-all cursor-pointer flex items-center justify-center"
+          title="Ask Meta AI"
+        >
+          <div className="w-full h-full rounded-full bg-card flex items-center justify-center">
+            <Sparkles className="w-5 h-5 text-purple-500" />
+          </div>
+        </button>
       )}
     </div>
   )
