@@ -1,0 +1,21 @@
+{
+  "name": "Arixo Web",
+  "short_name": "Arixo",
+  "description": "Simple. Reliable. Private. Real-time messaging, audio and video calling right from your browser.",
+  "start_url": "/chat",
+  "display": "standalone",
+  "background_color": "#00a884",
+  "theme_color": "#00a884",
+  "icons": [
+    {
+      "src": "/placeholder-logo.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/placeholder-logo.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

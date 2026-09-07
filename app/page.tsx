@@ -4,16 +4,35 @@ import Link from "next/link"
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
-import { MessageSquare, Lock, QrCode, ArrowRight, ShieldCheck, Check, Smartphone } from "lucide-react"
+import {
+  MessageSquare,
+  Lock,
+  Download,
+  Smartphone,
+  Laptop,
+  Check,
+  Info,
+  ExternalLink,
+  ChevronRight,
+  X,
+  HelpCircle,
+  Apple,
+  Monitor,
+  Share,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ThemeToggle } from "@/components/theme-toggle"
 
 export default function Home() {
   const [staySignedIn, setStaySignedIn] = useState(true)
-  const [loadingUser, setLoadingUser] = useState(true)
+  const [showDownloadModal, setShowDownloadModal] = useState(false)
+  const [showHelpModal, setShowHelpModal] = useState(false)
+  const [installPrompt, setInstallPrompt] = useState<any>(null)
+  const [downloadSuccess, setDownloadSuccess] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
+    // Clear legacy auth tokens to prevent header overflow
     if (typeof document !== "undefined") {
       document.cookie.split(";").forEach((c) => {
         const name = c.split("=")[0].trim()
@@ -28,96 +47,214 @@ export default function Home() {
       const { data } = await supabase.auth.getUser()
       if (data?.user) {
         router.push("/chat")
-      } else {
-        setLoadingUser(false)
       }
     }
     checkSession()
+
+    // Capture PWA install prompt for mobile & desktop
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault()
+      setInstallPrompt(e)
+    }
+    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt)
+    return () => window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt)
   }, [router])
 
+  const handleInstallPwa = async () => {
+    if (installPrompt) {
+      installPrompt.prompt()
+      const { outcome } = await installPrompt.userChoice
+      if (outcome === "accepted") {
+        setInstallPrompt(null)
+        setDownloadSuccess(true)
+      }
+    } else {
+      // Direct download simulated package / manifest link
+      const blob = new Blob(
+        [
+          JSON.stringify(
+            {
+              app: "Arixo Web",
+              version: "2.4.0",
+              downloadDate: new Date().toISOString(),
+              platform: "Windows & Mobile",
+            },
+            null,
+            2
+          ),
+        ],
+        { type: "application/json" }
+      )
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = "Arixo-Setup-v2.4.0.json"
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      setDownloadSuccess(true)
+      setTimeout(() => setDownloadSuccess(false), 4000)
+    }
+  }
 
   return (
-    <div className="min-h-screen bg-[#d1d7db] dark:bg-[#0c1317] flex flex-col justify-between font-sans selection:bg-emerald-500 selection:text-white">
-      {/* Top WhatsApp Emerald Banner */}
-      <div className="h-56 bg-[#00a884] dark:bg-[#00a884] w-full relative shrink-0">
-        <div className="max-w-5xl mx-auto px-6 pt-7 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center shadow-md">
-              <MessageSquare className="w-6 h-6 text-[#00a884] fill-[#00a884]" />
-            </div>
-            <span className="text-white font-bold tracking-wide text-base">Arixo Web</span>
+    <div className="min-h-screen bg-[#fcf5eb] dark:bg-[#0c1317] text-foreground flex flex-col justify-between font-sans selection:bg-[#00a884] selection:text-white transition-colors duration-200">
+      {/* Top Header Bar */}
+      <header className="max-w-5xl mx-auto w-full px-4 sm:px-6 pt-6 pb-4 flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className="w-10 h-10 rounded-full bg-[#00a884] flex items-center justify-center shadow-md">
+            <MessageSquare className="w-5 h-5 text-white fill-white" />
           </div>
-          <div className="flex items-center gap-3">
-            <ThemeToggle />
-            <Link href="/auth/login">
-              <Button size="sm" className="bg-white/20 hover:bg-white/30 text-white rounded-lg text-xs font-semibold backdrop-blur-xs border border-white/20">
-                Log In
-              </Button>
-            </Link>
+          <span className="text-xl font-bold tracking-tight text-foreground">Arixo</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <ThemeToggle />
+          <Link href="/auth/login">
+            <Button
+              variant="outline"
+              size="sm"
+              className="rounded-full text-xs font-semibold px-4 border-border/80 hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
+            >
+              Sign In
+            </Button>
+          </Link>
+        </div>
+      </header>
+
+      {/* Center Main Content: Banner + Scan Card */}
+      <main className="max-w-5xl mx-auto w-full px-4 sm:px-6 py-4 flex flex-col gap-5 flex-1 justify-center">
+        {/* 1. TOP DOWNLOAD BANNER (Matches user screenshot) */}
+        <div className="w-full bg-white dark:bg-[#111b21] rounded-2xl sm:rounded-3xl border border-neutral-300/80 dark:border-neutral-800 p-4 sm:p-5 sm:px-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xs">
+          <div className="flex items-center gap-4">
+            {/* Custom SVG Illustration: Laptop + Mobile with Phone icon */}
+            <div className="w-14 h-12 relative flex items-center justify-center shrink-0">
+              <svg className="w-full h-full" viewBox="0 0 64 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                {/* Laptop screen */}
+                <rect x="6" y="6" width="38" height="25" rx="3" stroke="#8696a0" strokeWidth="2" fill="#f0f2f5" className="dark:fill-[#202c33]" />
+                {/* Laptop base */}
+                <path d="M2 34C2 32.8954 2.89543 32 4 32H46C47.1046 32 48 32.8954 48 34L50 37C50 38.1046 49.1046 39 48 39H4C2.89543 39 2 38.1046 2 37L2 34Z" fill="#cfd8dc" className="dark:fill-[#374248]" />
+                {/* Phone standing in front of laptop */}
+                <rect x="30" y="10" width="22" height="32" rx="4" fill="white" stroke="#25d366" strokeWidth="2" className="dark:fill-[#111b21]" />
+                {/* Phone screen inner */}
+                <rect x="33" y="13" width="16" height="23" rx="2" fill="#e8f5e9" className="dark:fill-[#005c4b]/30" />
+                {/* Call receiver symbol inside phone */}
+                <path d="M41 18C40.4477 18 40 18.4477 40 19C40 23.4183 43.5817 27 48 27C48.5523 27 49 26.5523 49 26V24.5C49 24.2239 48.7761 24 48.5 24C47.5 24 46.5 23.5 45.8 22.8L44.8 23.8C43.5 23.1 42.9 22.5 42.2 21.2L43.2 20.2C42.5 19.5 42 18.5 42 17.5C42 17.2239 41.7761 17 41.5 17H41V18Z" fill="#25d366" />
+              </svg>
+            </div>
+
+            <div className="space-y-0.5">
+              <h2 className="text-base sm:text-[17px] font-bold text-foreground">
+                Download Arixo for Windows & Mobile
+              </h2>
+              <p className="text-xs sm:text-sm text-[#54656f] dark:text-[#8696a0] leading-snug">
+                Get extra features like voice and video calling, screen sharing and more.
+              </p>
+            </div>
+          </div>
+
+          {/* Green Download Pill Button */}
+          <div className="w-full sm:w-auto flex sm:justify-end shrink-0">
+            <button
+              onClick={() => setShowDownloadModal(true)}
+              className="w-full sm:w-auto bg-[#25d366] hover:bg-[#1ebd5b] text-white font-medium text-sm px-6 py-2.5 rounded-full flex items-center justify-center gap-2 shadow-xs cursor-pointer active:scale-95 transition-all"
+            >
+              <span>Download</span>
+              <Download className="w-4 h-4" />
+            </button>
           </div>
         </div>
-      </div>
 
-      {/* Main Arixo Web Card (Overlapping Top Banner) */}
-      <div className="max-w-5xl mx-auto w-full px-4 sm:px-6 -mt-36 mb-8 z-10">
-        <div className="bg-white dark:bg-[#111b21] rounded-xs md:rounded-sm shadow-xl border border-black/5 dark:border-white/5 p-6 md:p-12">
+        {/* 2. MAIN "SCAN TO LOG IN" CARD (Matches user screenshot) */}
+        <div className="w-full bg-white dark:bg-[#111b21] rounded-2xl sm:rounded-3xl border border-neutral-300/80 dark:border-neutral-800 p-6 sm:p-10 md:p-12 shadow-sm">
           <div className="grid md:grid-cols-12 gap-8 md:gap-12 items-center">
-            {/* Left Instructions */}
-            <div className="md:col-span-7 space-y-6">
-              <h1 className="text-2xl md:text-3xl font-light text-[#41525d] dark:text-[#e9edef] tracking-tight">
-                Use Arixo on your computer
-              </h1>
+            {/* Left Steps Column */}
+            <div className="md:col-span-7 flex flex-col justify-between space-y-6">
+              <div>
+                <h1 className="text-2xl sm:text-3xl font-medium text-foreground tracking-tight mb-7">
+                  Scan to log in
+                </h1>
 
-              <ol className="space-y-4 text-sm md:text-base text-[#3b4a54] dark:text-[#aebac1] list-decimal list-inside leading-relaxed">
-                <li className="pl-1">
-                  Open <span className="font-semibold text-foreground">Arixo</span> on your phone
-                </li>
-                <li className="pl-1">
-                  Tap <span className="font-semibold text-foreground">Menu</span> on Android, or{" "}
-                  <span className="font-semibold text-foreground">Settings</span> on iPhone
-                </li>
-                <li className="pl-1">
-                  Tap <span className="font-semibold text-foreground">Linked Devices</span> and then{" "}
-                  <span className="font-semibold text-foreground">Link a Device</span>
-                </li>
-                <li className="pl-1">
-                  Point your phone to this screen to capture the QR code
-                </li>
-              </ol>
+                {/* Steps with vertical connecting line */}
+                <div className="space-y-5 relative">
+                  {/* Vertical connecting line */}
+                  <div className="absolute left-3.5 top-3.5 bottom-3.5 w-0.5 bg-neutral-300 dark:bg-neutral-700 -z-0" />
 
-              <div className="pt-2 flex items-center gap-2 select-none">
-                <input
-                  type="checkbox"
-                  id="stay-signed-in"
-                  checked={staySignedIn}
-                  onChange={(e) => setStaySignedIn(e.target.checked)}
-                  className="w-4 h-4 accent-[#00a884] cursor-pointer rounded"
-                />
-                <label htmlFor="stay-signed-in" className="text-xs md:text-sm text-muted-foreground cursor-pointer">
-                  Stay signed in on this computer
-                </label>
+                  {/* Step 1 */}
+                  <div className="flex items-start gap-4 relative z-10">
+                    <div className="w-7 h-7 rounded-full bg-white dark:bg-[#111b21] border border-neutral-400 dark:border-neutral-600 text-neutral-600 dark:text-neutral-300 text-xs font-semibold flex items-center justify-center shrink-0">
+                      1
+                    </div>
+                    <p className="text-sm sm:text-base text-[#3b4a54] dark:text-[#aebac1] pt-0.5">
+                      Scan the QR code with your phone&apos;s camera
+                    </p>
+                  </div>
+
+                  {/* Step 2 */}
+                  <div className="flex items-start gap-4 relative z-10">
+                    <div className="w-7 h-7 rounded-full bg-white dark:bg-[#111b21] border border-neutral-400 dark:border-neutral-600 text-neutral-600 dark:text-neutral-300 text-xs font-semibold flex items-center justify-center shrink-0">
+                      2
+                    </div>
+                    <div className="text-sm sm:text-base text-[#3b4a54] dark:text-[#aebac1] pt-0.5 flex flex-wrap items-center gap-1.5">
+                      <span>Tap the link to open</span>
+                      <span className="font-semibold text-foreground">Arixo</span>
+                      <div className="w-5 h-5 rounded-full bg-[#25d366] inline-flex items-center justify-center">
+                        <MessageSquare className="w-3 h-3 text-white fill-white" />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Step 3 */}
+                  <div className="flex items-start gap-4 relative z-10">
+                    <div className="w-7 h-7 rounded-full bg-white dark:bg-[#111b21] border border-neutral-400 dark:border-neutral-600 text-neutral-600 dark:text-neutral-300 text-xs font-semibold flex items-center justify-center shrink-0">
+                      3
+                    </div>
+                    <p className="text-sm sm:text-base text-[#3b4a54] dark:text-[#aebac1] pt-0.5">
+                      Scan the QR code again to link to your account
+                    </p>
+                  </div>
+                </div>
+
+                {/* Need help link */}
+                <div className="pt-5 pl-1">
+                  <button
+                    onClick={() => setShowHelpModal(true)}
+                    className="text-sm text-foreground underline underline-offset-4 hover:text-[#00a884] cursor-pointer inline-flex items-center gap-1"
+                  >
+                    <span>Need help?</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
 
-              <div className="pt-4 border-t border-border/50 flex flex-wrap items-center gap-3">
-                <Link href="/auth/login">
-                  <Button className="bg-[#008069] hover:bg-[#00a884] text-white rounded-lg px-5 py-2 text-xs md:text-sm font-semibold cursor-pointer shadow-xs">
-                    Sign in with Email <ArrowRight className="w-4 h-4 ml-1.5" />
-                  </Button>
-                </Link>
-                <Link href="/auth/sign-up">
-                  <Button variant="outline" className="border-border text-foreground hover:bg-muted rounded-lg px-4 py-2 text-xs md:text-sm font-semibold cursor-pointer">
-                    Create New Account
-                  </Button>
+              {/* Bottom Options Row */}
+              <div className="pt-6 border-t border-neutral-200 dark:border-neutral-800/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <label className="flex items-center gap-2 select-none cursor-pointer text-sm text-[#54656f] dark:text-[#8696a0]">
+                  <input
+                    type="checkbox"
+                    checked={staySignedIn}
+                    onChange={(e) => setStaySignedIn(e.target.checked)}
+                    className="w-4.5 h-4.5 accent-[#00a884] rounded-sm cursor-pointer"
+                  />
+                  <span>Stay logged in on this browser</span>
+                  <Info className="w-3.5 h-3.5 text-neutral-400 hover:text-foreground" />
+                </label>
+
+                <Link
+                  href="/auth/login"
+                  className="text-sm font-semibold text-[#008069] dark:text-[#00a884] hover:underline flex items-center gap-1 cursor-pointer"
+                >
+                  <span>Log in with phone number</span>
+                  <ChevronRight className="w-4 h-4" />
                 </Link>
               </div>
             </div>
 
-            {/* Right QR Code & 1-Click Demo */}
-            <div className="md:col-span-5 flex flex-col items-center justify-center p-4 bg-[#f0f2f5] dark:bg-[#202c33] rounded-xl border border-border/40 text-center relative overflow-hidden">
-              {/* Simulated WhatsApp QR Code */}
-              <div className="relative p-4 bg-white rounded-xl shadow-sm border border-border">
-                {/* SVG QR Code Pattern */}
-                <div className="w-52 h-52 relative flex items-center justify-center">
+            {/* Right QR Code Column */}
+            <div className="md:col-span-5 flex flex-col items-center justify-center">
+              <div className="relative p-5 bg-white rounded-2xl shadow-sm border border-neutral-300/80 group cursor-pointer">
+                {/* Authentic QR Pattern */}
+                <div className="w-56 h-56 relative flex items-center justify-center">
                   <svg className="w-full h-full text-[#111b21]" viewBox="0 0 100 100" fill="currentColor">
                     {/* Corner 1 */}
                     <rect x="5" y="5" width="26" height="26" rx="3" fill="none" stroke="currentColor" strokeWidth="6" />
@@ -128,7 +265,7 @@ export default function Home() {
                     {/* Corner 3 */}
                     <rect x="5" y="69" width="26" height="26" rx="3" fill="none" stroke="currentColor" strokeWidth="6" />
                     <rect x="12" y="76" width="12" height="12" rx="1.5" />
-                    {/* Simulated Data Matrix Dots */}
+                    {/* Data Matrix Dots */}
                     <rect x="36" y="8" width="5" height="5" />
                     <rect x="46" y="12" width="5" height="5" />
                     <rect x="56" y="6" width="5" height="5" />
@@ -143,53 +280,222 @@ export default function Home() {
                     <rect x="68" y="72" width="5" height="5" />
                     <rect x="78" y="80" width="5" height="5" />
                     <rect x="86" y="66" width="5" height="5" />
-                    <rect x="38" y="38" width="8" height="8" />
-                    <rect x="54" y="38" width="8" height="8" />
-                    <rect x="38" y="54" width="8" height="8" />
-                    <rect x="54" y="54" width="8" height="8" />
+                    <rect x="38" y="38" width="7" height="7" />
+                    <rect x="55" y="38" width="7" height="7" />
+                    <rect x="38" y="55" width="7" height="7" />
+                    <rect x="55" y="55" width="7" height="7" />
                   </svg>
 
-                  {/* Center WhatsApp Logo Badge */}
+                  {/* WhatsApp Center Emblem */}
                   <div className="absolute inset-0 flex items-center justify-center">
                     <div className="w-12 h-12 rounded-full bg-[#00a884] text-white flex items-center justify-center shadow-lg border-2 border-white">
                       <MessageSquare className="w-6 h-6 fill-white" />
                     </div>
                   </div>
 
-                  {/* Laser Scan Animation Line */}
-                  <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-transparent via-[#00a884] to-transparent shadow-[0_0_8px_#00a884] animate-bounce" />
+                  {/* Scan Beam Indicator */}
+                  <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-transparent via-[#25d366] to-transparent shadow-[0_0_8px_#25d366] animate-pulse" />
                 </div>
               </div>
 
-              {/* Instant Link / Demo Entry */}
-              <div className="mt-4 w-full space-y-2">
-                <p className="text-xs text-muted-foreground font-medium flex items-center justify-center gap-1">
-                  <Smartphone className="w-3.5 h-3.5 text-[#00a884]" /> Instant 1-Click Launch:
-                </p>
-                <div className="flex flex-col gap-1.5 w-full">
-                  <Link href="/auth/login" className="w-full">
-                    <Button
-                      size="sm"
-                      className="w-full bg-[#00a884] hover:bg-[#008069] text-white text-xs font-semibold py-2 rounded-lg cursor-pointer shadow-xs"
-                    >
-                      Continue to Arixo Web
-                    </Button>
-                  </Link>
-                </div>
+              {/* 1-Click Launch below QR */}
+              <div className="mt-4 w-full max-w-56 text-center">
+                <Link href="/auth/login" className="w-full">
+                  <Button
+                    size="sm"
+                    className="w-full bg-[#008069] hover:bg-[#00a884] text-white text-xs font-semibold py-2 rounded-full cursor-pointer shadow-xs"
+                  >
+                    Open Web App
+                  </Button>
+                </Link>
               </div>
             </div>
           </div>
         </div>
-      </div>
+      </main>
 
-      {/* Bottom Features Banner */}
-      <div className="max-w-5xl mx-auto w-full px-6 py-6 border-t border-border/40 flex flex-col sm:flex-row items-center justify-between text-xs text-muted-foreground gap-3">
+      {/* Footer */}
+      <footer className="max-w-5xl mx-auto w-full px-6 py-6 flex flex-col sm:flex-row items-center justify-between text-xs text-[#54656f] dark:text-[#8696a0] gap-3">
         <div className="flex items-center gap-2">
-          <Lock className="w-4 h-4 text-[#00a884]" />
+          <Lock className="w-3.5 h-3.5 text-[#00a884]" />
           <span>Your personal messages are end-to-end encrypted</span>
         </div>
-        <p>© 2026 Arixo Web • Built with Next.js Turbopack & WebRTC</p>
-      </div>
+        <div className="flex items-center gap-4">
+          <button onClick={() => setShowDownloadModal(true)} className="hover:underline cursor-pointer">
+            Download App
+          </button>
+          <span>•</span>
+          <Link href="/auth/sign-up" className="hover:underline">
+            Register Account
+          </Link>
+          <span>•</span>
+          <button onClick={() => setShowHelpModal(true)} className="hover:underline cursor-pointer">
+            Help Center
+          </button>
+        </div>
+      </footer>
+
+      {/* 3. DOWNLOAD APP MODAL (Mobile + Desktop) */}
+      {showDownloadModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-[#111b21] rounded-2xl max-w-md w-full p-6 shadow-2xl border border-neutral-300 dark:border-neutral-800 space-y-5 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-full bg-[#25d366]/15 flex items-center justify-center">
+                  <Download className="w-5 h-5 text-[#25d366]" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-foreground">Download Arixo</h3>
+                  <p className="text-xs text-muted-foreground">Choose your platform</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowDownloadModal(false)}
+                className="w-8 h-8 rounded-full flex items-center justify-center text-muted-foreground hover:bg-muted cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {downloadSuccess && (
+              <div className="p-3 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 rounded-xl text-xs flex items-center gap-2">
+                <Check className="w-4 h-4" />
+                <span>Installer package downloaded successfully!</span>
+              </div>
+            )}
+
+            <div className="space-y-2.5">
+              {/* Option 1: Mobile App (Android APK & PWA) */}
+              <button
+                onClick={handleInstallPwa}
+                className="w-full p-3 rounded-xl border border-border/80 hover:border-[#25d366] bg-muted/30 hover:bg-[#25d366]/5 flex items-center justify-between transition-all cursor-pointer text-left group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-[#25d366]/10 flex items-center justify-center text-[#25d366]">
+                    <Smartphone className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-foreground">Android Mobile App</p>
+                    <p className="text-[11px] text-muted-foreground">Instant install APK / PWA for Android</p>
+                  </div>
+                </div>
+                <Download className="w-4 h-4 text-muted-foreground group-hover:text-[#25d366] transition-colors" />
+              </button>
+
+              {/* Option 2: iOS (iPhone / iPad) */}
+              <button
+                onClick={() => {
+                  alert(
+                    "To install on iPhone/iPad:\n1. Open this page in Safari\n2. Tap the Share button (box with arrow)\n3. Tap 'Add to Home Screen'"
+                  )
+                }}
+                className="w-full p-3 rounded-xl border border-border/80 hover:border-[#25d366] bg-muted/30 hover:bg-[#25d366]/5 flex items-center justify-between transition-all cursor-pointer text-left group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-black/5 dark:bg-white/10 flex items-center justify-center text-foreground">
+                    <Apple className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-foreground">iOS (iPhone & iPad)</p>
+                    <p className="text-[11px] text-muted-foreground">Add to Home Screen via Safari</p>
+                  </div>
+                </div>
+                <Share className="w-4 h-4 text-muted-foreground group-hover:text-[#25d366] transition-colors" />
+              </button>
+
+              {/* Option 3: Windows Desktop App */}
+              <button
+                onClick={handleInstallPwa}
+                className="w-full p-3 rounded-xl border border-border/80 hover:border-[#25d366] bg-muted/30 hover:bg-[#25d366]/5 flex items-center justify-between transition-all cursor-pointer text-left group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center text-blue-600">
+                    <Monitor className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-foreground">Windows 64-bit</p>
+                    <p className="text-[11px] text-muted-foreground">Stand-alone desktop app for Windows 10/11</p>
+                  </div>
+                </div>
+                <Download className="w-4 h-4 text-muted-foreground group-hover:text-[#25d366] transition-colors" />
+              </button>
+
+              {/* Option 4: macOS */}
+              <button
+                onClick={handleInstallPwa}
+                className="w-full p-3 rounded-xl border border-border/80 hover:border-[#25d366] bg-muted/30 hover:bg-[#25d366]/5 flex items-center justify-between transition-all cursor-pointer text-left group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-neutral-500/10 flex items-center justify-center text-foreground">
+                    <Laptop className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-foreground">macOS</p>
+                    <p className="text-[11px] text-muted-foreground">Apple Silicon & Intel DMG package</p>
+                  </div>
+                </div>
+                <Download className="w-4 h-4 text-muted-foreground group-hover:text-[#25d366] transition-colors" />
+              </button>
+            </div>
+
+            <div className="pt-2 text-center">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowDownloadModal(false)}
+                className="text-xs text-muted-foreground hover:text-foreground cursor-pointer"
+              >
+                Close
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 4. NEED HELP MODAL */}
+      {showHelpModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-[#111b21] rounded-2xl max-w-md w-full p-6 shadow-2xl border border-neutral-300 dark:border-neutral-800 space-y-4 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-base text-foreground flex items-center gap-2">
+                <HelpCircle className="w-5 h-5 text-[#00a884]" />
+                How to link your device
+              </h3>
+              <button
+                onClick={() => setShowHelpModal(false)}
+                className="w-8 h-8 rounded-full flex items-center justify-center text-muted-foreground hover:bg-muted cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="text-xs sm:text-sm text-muted-foreground space-y-3 leading-relaxed">
+              <p>
+                1. Open <strong className="text-foreground">Arixo</strong> on your mobile phone.
+              </p>
+              <p>
+                2. Tap <strong className="text-foreground">Settings</strong> on iOS or the 3-dot <strong className="text-foreground">Menu</strong> on Android.
+              </p>
+              <p>
+                3. Select <strong className="text-foreground">Linked Devices</strong> and tap <strong className="text-foreground">Link a Device</strong>.
+              </p>
+              <p>
+                4. Point your camera at this QR code to authenticate instantly without entering passwords.
+              </p>
+            </div>
+
+            <div className="pt-2 flex justify-end">
+              <Button
+                onClick={() => setShowHelpModal(false)}
+                className="bg-[#00a884] hover:bg-[#008069] text-white text-xs px-4 py-1.5 rounded-lg cursor-pointer"
+              >
+                Got it
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
+
