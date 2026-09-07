@@ -290,7 +290,7 @@ export default function Home() {
                   href="/auth/login"
                   className="text-sm font-semibold text-[#008069] dark:text-[#00a884] hover:underline flex items-center gap-1 cursor-pointer"
                 >
-                  <span>Log in with phone number</span>
+                  <span>Log in with email ID</span>
                   <ChevronRight className="w-4 h-4" />
                 </Link>
               </div>
