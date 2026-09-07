@@ -16,6 +16,11 @@ export interface ChatConversation {
   updated_at: string
   participant_1?: ChatUser
   participant_2?: ChatUser
+  is_group?: boolean
+  group_name?: string
+  group_avatar?: string
+  group_members?: string[]
+  members?: string[]
 }
 
 export interface ChatMessage {
@@ -105,7 +110,9 @@ export async function apiGetMessages(conversationId: string): Promise<ChatMessag
   }
 }
 
-export async function apiSendMessage(message: Omit<ChatMessage, "id" | "created_at">): Promise<ChatMessage> {
+export async function apiSendMessage(
+  message: (Omit<ChatMessage, "id" | "created_at"> & { id?: string })
+): Promise<ChatMessage> {
   const res = await fetch("/api/chat/messages", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

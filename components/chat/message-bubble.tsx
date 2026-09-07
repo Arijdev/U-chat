@@ -351,7 +351,11 @@ export const MessageBubble = memo(function MessageBubble({
 
         {/* Bottom Row: Timestamp, Star & Status Ticks */}
         <div className="flex items-center justify-end gap-1.5 mt-1 text-[10px] text-muted-foreground select-none">
-          {isStarred && <Star className="w-3 h-3 text-amber-500 fill-amber-500 shrink-0 animate-in zoom-in-50" title="Starred message" />}
+          {isStarred && (
+            <span title="Starred message">
+              <Star className="w-3 h-3 text-amber-500 fill-amber-500 shrink-0 animate-in zoom-in-50" />
+            </span>
+          )}
           <span>
             {new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
           </span>

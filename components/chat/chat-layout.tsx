@@ -70,18 +70,6 @@ export default function ChatLayout({ user }: { user: User }) {
     }
     apiRegisterUser(userData)
     registerProfile(userData)
-
-    // Self-healing: if Supabase metadata had a base64 photo, overwrite it with the clean URL
-    if (isBase64Avatar) {
-      import("@/lib/supabase/client").then(({ createClient }) => {
-        const supabase = createClient()
-        supabase.auth.updateUser({
-          data: {
-            avatar_url: cleanAvatar,
-          },
-        }).catch(() => {})
-      })
-    }
   }, [user])
 
   const loadConversations = useCallback(async () => {

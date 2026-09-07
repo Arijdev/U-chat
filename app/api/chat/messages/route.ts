@@ -35,6 +35,7 @@ export async function POST(req: NextRequest) {
     const {
       action,
       messageId,
+      id,
       emoji,
       userId,
       isStarred,
@@ -59,12 +60,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(updated || { error: "Message not found" })
     }
 
-
     if (!conversation_id || !sender_id) {
       return NextResponse.json({ error: "Missing required message fields" }, { status: 400 })
     }
 
     const newMsg = addServerMessage({
+      id: id || undefined,
       conversation_id,
       sender_id,
       content: content || "",

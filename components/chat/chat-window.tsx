@@ -2,7 +2,7 @@
 
 import type React from "react"
 import type { User } from "@supabase/supabase-js"
-import { useEffect, useRef, useState, useCallback } from "react"
+import { useEffect, useRef, useState, useCallback, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -207,7 +207,23 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
           const newMsg = event.payload
           if (newMsg && newMsg.conversation_id === conversationId) {
             setMessages((prev) => {
-              if (prev.some((m) => m.id === newMsg.id)) return prev
+              // If already present with this exact ID, update in place
+              if (prev.some((m) => m.id === newMsg.id)) {
+                return prev.map((m) => (m.id === newMsg.id ? { ...m, ...newMsg } : m))
+              }
+              // If from current user, match against pending optimistic message
+              const optimisticIdx = prev.findIndex(
+                (m) =>
+                  m.sender_id === newMsg.sender_id &&
+                  (m.id.startsWith("msg-") || m.id.startsWith("temp-")) &&
+                  m.content === newMsg.content &&
+                  m.message_type === newMsg.message_type
+              )
+              if (optimisticIdx !== -1) {
+                const updated = [...prev]
+                updated[optimisticIdx] = newMsg
+                return updated
+              }
               return [...prev, newMsg]
             })
           }
@@ -242,12 +258,16 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
         }
 
         case "heartbeat_poll": {
-          // Quiet background sync to ensure zero missed messages
+          // Quiet background sync to ensure zero missed messages without deleting in-flight messages
           apiGetMessages(conversationId).then((latest) => {
             if (!isSubscribed) return
             setMessages((prev) => {
-              if (latest.length !== prev.length || latest[latest.length - 1]?.id !== prev[prev.length - 1]?.id) {
-                return latest
+              const pendingOptimistic = prev.filter(
+                (m) => (m.id.startsWith("msg-") || m.id.startsWith("temp-")) && !latest.some((l) => l.id === m.id)
+              )
+              const combined = [...latest, ...pendingOptimistic]
+              if (combined.length !== prev.length || combined[combined.length - 1]?.id !== prev[prev.length - 1]?.id) {
+                return combined
               }
               return prev
             })
@@ -285,7 +305,7 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
         isEncrypted = false
       }
 
-      // Optimistic message
+      // Optimistic message with unique ID passed through to server
       const tempId = `msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
       const optimisticMsg: any = {
         id: tempId,
@@ -305,6 +325,7 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
 
       // Persist to server store and broadcast via SSE
       const saved = await apiSendMessage({
+        id: tempId,
         conversation_id: conversationId,
         sender_id: user.id,
         content: encryptedContent,
@@ -315,7 +336,13 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
 
       if (saved && saved.id) {
         decryptedMessagesRef.current.set(saved.id, messageText)
-        setMessages((prev) => prev.map((m) => (m.id === tempId ? saved : m)))
+        setMessages((prev) => {
+          const hasSaved = prev.some((m) => m.id === saved.id && m.id !== tempId)
+          if (hasSaved) {
+            return prev.filter((m) => m.id !== tempId)
+          }
+          return prev.map((m) => (m.id === tempId ? saved : m))
+        })
       }
     } catch (err) {
       console.error("Error sending message:", err)
@@ -354,6 +381,7 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
 
     try {
       const saved = await apiSendMessage({
+        id: tempId,
         conversation_id: conversationId,
         sender_id: user.id,
         content: attachment.content,
@@ -366,7 +394,13 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
       })
 
       if (saved && saved.id) {
-        setMessages((prev) => prev.map((m) => (m.id === tempId ? saved : m)))
+        setMessages((prev) => {
+          const hasSaved = prev.some((m) => m.id === saved.id && m.id !== tempId)
+          if (hasSaved) {
+            return prev.filter((m) => m.id !== tempId)
+          }
+          return prev.map((m) => (m.id === tempId ? saved : m))
+        })
       }
     } catch (e) {
       console.error("Error sending attachment:", e)
@@ -577,10 +611,19 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
     setShowEmojiPicker(false)
   }
 
-  // Filter messages when search is active
-  const displayedMessages = searchInChat.trim()
-    ? messages.filter((m) => m.content?.toLowerCase().includes(searchInChat.toLowerCase()))
-    : messages
+  // Filter messages when search is active, and ensure strictly unique keys
+  const displayedMessages = useMemo(() => {
+    const list = searchInChat.trim()
+      ? messages.filter((m) => m.content?.toLowerCase().includes(searchInChat.toLowerCase()))
+      : messages
+
+    const seen = new Set<string>()
+    return list.filter((m) => {
+      if (!m.id || seen.has(m.id)) return false
+      seen.add(m.id)
+      return true
+    })
+  }, [messages, searchInChat])
 
   return (
     <div className="flex-1 flex flex-col bg-[#efeae2] dark:bg-[#0b141a] relative overflow-hidden">
