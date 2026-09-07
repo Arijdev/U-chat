@@ -34,7 +34,7 @@ export function MetaAiView({ user, onClose }: MetaAiViewProps) {
       {
         id: "ai_init",
         role: "assistant",
-        text: "Hi! I'm Meta AI on WhatsApp, powered by Google Gemini. Ask me anything, brainstorm ideas, write messages, plan trips, or solve problems!",
+        text: "Hi! I'm Meta AI on Arixo Web, powered by Google Gemini. Ask me anything, brainstorm ideas, write messages, plan trips, or solve problems!",
         time: "Just now",
       },
     ]
@@ -64,7 +64,7 @@ export function MetaAiView({ user, onClose }: MetaAiViewProps) {
     "Write a polite thank you email to my team",
     "Explain quantum computing in simple terms",
     "Give me 5 high-protein dinner recipes",
-    "Help me write a professional WhatsApp message",
+    "Help me write a professional Arixo message",
   ]
 
   const handleCopy = useCallback((id: string, text: string) => {
@@ -77,7 +77,7 @@ export function MetaAiView({ user, onClose }: MetaAiViewProps) {
     const initialMsg: AiMessage = {
       id: `ai_${Date.now()}`,
       role: "assistant",
-      text: "Hi! I'm Meta AI on WhatsApp, powered by Google Gemini. How can I assist you today?",
+      text: "Hi! I'm Meta AI on Arixo Web, powered by Google Gemini. How can I assist you today?",
       time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     }
     setMessages([initialMsg])

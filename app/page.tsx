@@ -35,7 +35,7 @@ export default function Home() {
             <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center shadow-md">
               <MessageSquare className="w-6 h-6 text-[#00a884] fill-[#00a884]" />
             </div>
-            <span className="text-white font-bold tracking-widest text-sm uppercase">WHATSAPP WEB</span>
+            <span className="text-white font-bold tracking-wide text-base">Arixo Web</span>
           </div>
           <div className="flex items-center gap-3">
             <ThemeToggle />
@@ -48,19 +48,19 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Main WhatsApp Web Card (Overlapping Top Banner) */}
+      {/* Main Arixo Web Card (Overlapping Top Banner) */}
       <div className="max-w-5xl mx-auto w-full px-4 sm:px-6 -mt-36 mb-8 z-10">
         <div className="bg-white dark:bg-[#111b21] rounded-xs md:rounded-sm shadow-xl border border-black/5 dark:border-white/5 p-6 md:p-12">
           <div className="grid md:grid-cols-12 gap-8 md:gap-12 items-center">
             {/* Left Instructions */}
             <div className="md:col-span-7 space-y-6">
               <h1 className="text-2xl md:text-3xl font-light text-[#41525d] dark:text-[#e9edef] tracking-tight">
-                Use WhatsApp on your computer
+                Use Arixo on your computer
               </h1>
 
               <ol className="space-y-4 text-sm md:text-base text-[#3b4a54] dark:text-[#aebac1] list-decimal list-inside leading-relaxed">
                 <li className="pl-1">
-                  Open <span className="font-semibold text-foreground">WhatsApp</span> on your phone
+                  Open <span className="font-semibold text-foreground">Arixo</span> on your phone
                 </li>
                 <li className="pl-1">
                   Tap <span className="font-semibold text-foreground">Menu</span> on Android, or{" "}
@@ -162,7 +162,7 @@ export default function Home() {
                       size="sm"
                       className="w-full bg-[#00a884] hover:bg-[#008069] text-white text-xs font-semibold py-2 rounded-lg cursor-pointer shadow-xs"
                     >
-                      Continue to WhatsApp Web
+                      Continue to Arixo Web
                     </Button>
                   </Link>
                 </div>
@@ -178,7 +178,7 @@ export default function Home() {
           <Lock className="w-4 h-4 text-[#00a884]" />
           <span>Your personal messages are end-to-end encrypted</span>
         </div>
-        <p>© 2026 WhatsApp LLC • Built with Next.js Turbopack & WebRTC</p>
+        <p>© 2026 Arixo Web • Built with Next.js Turbopack & WebRTC</p>
       </div>
     </div>
   )

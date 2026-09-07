@@ -27,7 +27,7 @@ export function ProfileModal({
     user.user_metadata?.display_name ||
     user.email?.split("@")[0] ||
     "User"
-  const initialStatus = currentProfile?.status || "Hey there! I am using WhatsApp."
+  const initialStatus = currentProfile?.status || "Hey there! I am using Arixo."
 
   const [displayName, setDisplayName] = useState(initialName)
   const [status, setStatus] = useState(initialStatus)
@@ -119,7 +119,7 @@ export function ProfileModal({
             <div className="w-24 h-24 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white text-3xl font-bold shadow-md border-4 border-card">
               {displayName?.[0]?.toUpperCase() || user.email?.[0]?.toUpperCase() || "?"}
             </div>
-            <p className="text-xs text-muted-foreground mt-2">WhatsApp Profile</p>
+            <p className="text-xs text-muted-foreground mt-2">Arixo Profile</p>
           </div>
 
           {/* Display Name Section */}
@@ -163,7 +163,7 @@ export function ProfileModal({
               )}
             </div>
             <p className="text-[11px] text-muted-foreground">
-              This is not your username or pin. This name will be visible to your WhatsApp contacts.
+              This is not your username or pin. This name will be visible to your Arixo contacts.
             </p>
           </div>
 

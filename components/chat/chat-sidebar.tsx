@@ -76,7 +76,7 @@ export default function ChatSidebar({
     user.user_metadata?.display_name || user.email?.split("@")[0] || "User"
   )
   const [currentStatus, setCurrentStatus] = useState(
-    user.user_metadata?.status || "Hey there! I am using WhatsApp."
+    user.user_metadata?.status || "Hey there! I am using Arixo."
   )
   const [currentAvatarUrl, setCurrentAvatarUrl] = useState(
     user.user_metadata?.avatar_url || ""

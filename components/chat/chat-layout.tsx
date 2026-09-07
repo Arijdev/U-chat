@@ -159,9 +159,9 @@ export default function ChatLayout({ user }: { user: User }) {
   }, [user.id, loadConversations])
 
   // Play incoming ringtone when receiving a call
-  // Ensure document title is WhatsApp Web
+  // Ensure document title is Arixo Web
   useEffect(() => {
-    document.title = "WhatsApp Web"
+    document.title = "Arixo Web"
   }, [])
 
   useEffect(() => {
@@ -369,7 +369,7 @@ export default function ChatLayout({ user }: { user: User }) {
                     💬
                   </div>
                   <div>
-                    <h2 className="text-2xl font-bold text-foreground mb-2">WhatsApp Web</h2>
+                    <h2 className="text-2xl font-bold text-foreground mb-2">Arixo Web</h2>
                     <p className="text-xs text-muted-foreground leading-relaxed">
                       Send and receive messages with end-to-end encryption. Seamless real-time sync with photos, documents, voice notes, and HD video calls.
                     </p>

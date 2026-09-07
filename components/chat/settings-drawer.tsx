@@ -58,7 +58,7 @@ export function SettingsDrawer({ user, onClose, onOpenProfile }: SettingsDrawerP
 
   const displayName = user.user_metadata?.display_name || user.email?.split("@")[0] || "User"
   const avatarUrl = user.user_metadata?.avatar_url
-  const status = user.user_metadata?.status || "Hey there! I am using WhatsApp."
+  const status = user.user_metadata?.status || "Hey there! I am using Arixo."
 
   const handleLogout = async () => {
     const supabase = createClient()
@@ -67,7 +67,7 @@ export function SettingsDrawer({ user, onClose, onOpenProfile }: SettingsDrawerP
   }
 
   const WALLPAPER_COLORS = [
-    { name: "Default WhatsApp", color: "#efeae2", darkColor: "#0b141a" },
+    { name: "Default Arixo", color: "#efeae2", darkColor: "#0b141a" },
     { name: "Soft Sage", color: "#d9e8df", darkColor: "#172b22" },
     { name: "Sky Blue", color: "#d5e4f3", darkColor: "#172432" },
     { name: "Blush Pink", color: "#f7dede", darkColor: "#321d24" },
@@ -355,7 +355,7 @@ export function SettingsDrawer({ user, onClose, onOpenProfile }: SettingsDrawerP
                 <Palette className="w-5 h-5 text-emerald-600" />
                 <div>
                   <p className="text-sm font-semibold text-foreground">Chat Wallpaper</p>
-                  <p className="text-xs text-muted-foreground">Colors and WhatsApp doodle overlay</p>
+                  <p className="text-xs text-muted-foreground">Colors and Arixo doodle overlay</p>
                 </div>
               </div>
               <div
@@ -386,8 +386,8 @@ export function SettingsDrawer({ user, onClose, onOpenProfile }: SettingsDrawerP
           <div className="p-4 space-y-4">
             <div className="flex items-center justify-between p-3 bg-card rounded-xl border border-border">
               <div>
-                <p className="text-sm font-semibold text-foreground">Add WhatsApp doodles</p>
-                <p className="text-xs text-muted-foreground">Show classic WhatsApp background illustrations</p>
+                <p className="text-sm font-semibold text-foreground">Add Arixo doodles</p>
+                <p className="text-xs text-muted-foreground">Show classic Arixo background illustrations</p>
               </div>
               <input
                 type="checkbox"
@@ -455,7 +455,7 @@ export function SettingsDrawer({ user, onClose, onOpenProfile }: SettingsDrawerP
         {/* KEYBOARD SHORTCUTS */}
         {section === "shortcuts" && (
           <div className="p-4 space-y-2">
-            <p className="text-xs text-muted-foreground mb-3">WhatsApp Web Keyboard Navigation</p>
+            <p className="text-xs text-muted-foreground mb-3">Arixo Web Keyboard Navigation</p>
             {SHORTCUTS.map((sc) => (
               <div key={sc.label} className="flex items-center justify-between p-2.5 bg-card rounded-xl border border-border">
                 <span className="text-xs font-medium text-foreground">{sc.label}</span>
@@ -480,10 +480,10 @@ export function SettingsDrawer({ user, onClose, onOpenProfile }: SettingsDrawerP
             <div className="w-16 h-16 rounded-2xl bg-emerald-600 flex items-center justify-center text-white mx-auto shadow-md">
               <MessageSquare className="w-8 h-8" />
             </div>
-            <h3 className="text-base font-bold text-foreground">WhatsApp Web</h3>
+            <h3 className="text-base font-bold text-foreground">Arixo Web</h3>
             <p className="text-xs text-muted-foreground">Version 2.3000.101 • End-to-End Encrypted</p>
             <div className="bg-card rounded-xl p-3 border border-border text-left space-y-2 text-xs text-muted-foreground">
-              <p className="font-semibold text-foreground">About WhatsApp Web</p>
+              <p className="font-semibold text-foreground">About Arixo Web</p>
               <p>Built with Next.js Turbopack, WebRTC Peer-to-Peer real-time audio & video streaming, and AES-256 GCM encryption.</p>
             </div>
           </div>
@@ -496,7 +496,7 @@ export function SettingsDrawer({ user, onClose, onOpenProfile }: SettingsDrawerP
           <div className="bg-card text-card-foreground w-84 rounded-2xl p-6 shadow-2xl border border-border space-y-4 animate-in zoom-in-95">
             <h3 className="text-base font-bold text-foreground">Log out?</h3>
             <p className="text-xs text-muted-foreground leading-relaxed">
-              Are you sure you want to log out of WhatsApp Web? You will need to sign in again to receive messages.
+              Are you sure you want to log out of Arixo Web? You will need to sign in again to receive messages.
             </p>
             <div className="flex gap-2 justify-end pt-2">
               <Button

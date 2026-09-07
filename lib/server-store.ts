@@ -600,10 +600,10 @@ export function deleteServerStory(storyId: string, userId: string): boolean {
 // CHANNELS & COMMUNITIES
 const DEFAULT_CHANNELS: ServerChannel[] = [
   {
-    id: "chan_whatsapp",
-    name: "WhatsApp",
-    handle: "whatsapp",
-    description: "The official WhatsApp channel. News, updates and product features.",
+    id: "chan_arixo",
+    name: "Arixo",
+    handle: "arixo",
+    description: "The official Arixo channel. News, updates and product features.",
     avatar_url: "https://images.unsplash.com/photo-1614680376593-902f749f7ffc?w=150&auto=format&fit=crop&q=80",
     verified: true,
     followers_count: 148200000,
@@ -611,7 +611,7 @@ const DEFAULT_CHANNELS: ServerChannel[] = [
     updates: [
       {
         id: "up_1",
-        text: "Introducing WhatsApp Channels! A simple, reliable, and private way to receive important updates from people and organizations right inside WhatsApp.",
+        text: "Introducing Arixo Channels! A simple, reliable, and private way to receive important updates from people and organizations right inside Arixo.",
         time: "Today, 10:30 AM",
         reactions: { "💚": 124000, "🔥": 45000, "👏": 18000 },
       },

@@ -62,7 +62,7 @@ export default function LoginPage() {
               </div>
             </div>
             <div>
-              <CardTitle className="text-2xl font-bold tracking-tight">Welcome to WhatsApp Web</CardTitle>
+              <CardTitle className="text-2xl font-bold tracking-tight">Welcome to Arixo Web</CardTitle>
               <CardDescription className="text-muted-foreground">Sign in to your account to continue</CardDescription>
             </div>
           </CardHeader>

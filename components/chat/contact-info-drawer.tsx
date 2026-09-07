@@ -125,7 +125,7 @@ export function ContactInfoDrawer({
         <div className="bg-white dark:bg-[#202c33] p-4 shadow-2xs border-y border-border/40 space-y-1">
           <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">About</p>
           <p className="text-sm text-foreground leading-relaxed">
-            {contact.status || "Hey there! I am using WhatsApp."}
+            {contact.status || "Hey there! I am using Arixo."}
           </p>
         </div>
 

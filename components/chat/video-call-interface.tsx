@@ -443,7 +443,7 @@ export function VideoCallInterface({
             <div>
               <h2 className="text-2xl md:text-3xl font-bold text-white">{otherUserName}</h2>
               <p className="text-sm font-medium text-emerald-400 mt-1">
-                {isRemoteConnected ? "WhatsApp Audio Call" : isCaller ? "Ringing..." : "Connecting..."}
+                {isRemoteConnected ? "Arixo Audio Call" : isCaller ? "Ringing..." : "Connecting..."}
               </p>
             </div>
           </div>

@@ -9,29 +9,29 @@ const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono"
 
 export const metadata: Metadata = {
   title: {
-    default: 'WhatsApp Web',
-    template: '%s | WhatsApp Web',
+    default: 'Arixo Web',
+    template: '%s | Arixo Web',
   },
   description:
-    'WhatsApp Web — Simple. Reliable. Private. Real-time messaging, audio and video calling right from your browser.',
-  applicationName: 'WhatsApp Web',
-  keywords: ['whatsapp web', 'whatsapp', 'chat', 'messaging', 'video call', 'encrypted messaging'],
-  authors: [{ name: 'WhatsApp' }],
-  creator: 'WhatsApp Web',
+    'Arixo Web — Simple. Reliable. Private. Real-time messaging, audio and video calling right from your browser.',
+  applicationName: 'Arixo Web',
+  keywords: ['arixo web', 'arixo', 'chat', 'messaging', 'video call', 'encrypted messaging'],
+  authors: [{ name: 'Arixo' }],
+  creator: 'Arixo Web',
   icons: {
     icon: '/favicon.ico',
   },
   openGraph: {
     type: 'website',
     locale: 'en_US',
-    siteName: 'WhatsApp Web',
-    title: 'WhatsApp Web',
+    siteName: 'Arixo Web',
+    title: 'Arixo Web',
     description:
       'Simple. Reliable. Private. Real-time messaging, audio and video calling right from your browser.',
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'WhatsApp Web',
+    title: 'Arixo Web',
     description:
       'Simple. Reliable. Private. Real-time messaging, audio and video calling right from your browser.',
   },

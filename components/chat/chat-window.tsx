@@ -830,7 +830,7 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
             id: "unknown",
             display_name: "Contact",
             email: "",
-            status: "Hey there! I am using WhatsApp.",
+            status: "Hey there! I am using Arixo.",
           }
         }
         messages={messages}

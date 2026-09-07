@@ -82,7 +82,7 @@ export default function SignUpPage() {
               </div>
             </div>
             <div>
-              <CardTitle className="text-2xl font-bold tracking-tight">Join WhatsApp Web</CardTitle>
+              <CardTitle className="text-2xl font-bold tracking-tight">Join Arixo Web</CardTitle>
               <CardDescription className="text-muted-foreground">Create your account to get started</CardDescription>
             </div>
           </CardHeader>

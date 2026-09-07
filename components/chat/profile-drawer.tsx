@@ -32,7 +32,7 @@ const WHATSAPP_STATUS_PRESETS = [
   "In a meeting",
   "At school",
   "At the movies",
-  "Can't talk, WhatsApp only",
+  "Can't talk, Arixo only",
   "Sleeping",
   "Urgent calls only",
 ]
@@ -53,7 +53,7 @@ export function ProfileDrawer({
   const initialStatus =
     currentProfile?.status ||
     user.user_metadata?.status ||
-    "Hey there! I am using WhatsApp."
+    "Hey there! I am using Arixo."
   const initialAvatar = currentProfile?.avatar_url || user.user_metadata?.avatar_url || ""
 
   const [displayName, setDisplayName] = useState(initialName)
@@ -263,7 +263,7 @@ export function ProfileDrawer({
           </div>
         </div>
         <p className="px-5 py-3 text-xs text-muted-foreground leading-relaxed">
-          This is not your username or pin. This name will be visible to your WhatsApp contacts.
+          This is not your username or pin. This name will be visible to your Arixo contacts.
         </p>
 
         {/* About Section */}
