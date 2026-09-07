@@ -19,6 +19,7 @@ import {
   Apple,
   Monitor,
   Share,
+  CheckCircle2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ThemeToggle } from "@/components/theme-toggle"
@@ -29,9 +30,15 @@ export default function Home() {
   const [showHelpModal, setShowHelpModal] = useState(false)
   const [installPrompt, setInstallPrompt] = useState<any>(null)
   const [downloadSuccess, setDownloadSuccess] = useState(false)
+  const [pairingCode, setPairingCode] = useState("384-921")
+  const [isQrConnected, setIsQrConnected] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
+    // Generate fresh pairing code
+    const randomCode = `${Math.floor(100 + Math.random() * 900)}-${Math.floor(100 + Math.random() * 900)}`
+    setPairingCode(randomCode)
+
     // Clear legacy auth tokens to prevent header overflow
     if (typeof document !== "undefined") {
       document.cookie.split(";").forEach((c) => {
@@ -51,13 +58,52 @@ export default function Home() {
     }
     checkSession()
 
+    // Listen for mobile QR login scan signals
+    const onQrLoginSuccess = (payload: any) => {
+      setIsQrConnected(true)
+      setTimeout(() => {
+        window.location.href = "/chat"
+      }, 900)
+    }
+
+    let bcWeb: BroadcastChannel | null = null
+    let bcGlobal: BroadcastChannel | null = null
+    try {
+      bcWeb = new BroadcastChannel("uchat_signaling_arixo_qr_web")
+      bcWeb.onmessage = (e) => {
+        if (e.data?.type === "qr_login_success") onQrLoginSuccess(e.data)
+      }
+      bcGlobal = new BroadcastChannel("uchat_signaling_qr_login")
+      bcGlobal.onmessage = (e) => {
+        if (e.data?.type === "qr_login_success") onQrLoginSuccess(e.data)
+      }
+    } catch (e) {}
+
+    // Polling server signaling for cross-device QR login
+    const pollInterval = setInterval(async () => {
+      try {
+        const res = await fetch("/api/chat/signaling?to=arixo_qr_web")
+        if (res.ok) {
+          const data = await res.json()
+          if (data.signals?.some((s: any) => s.type === "qr_login_success" || s.payload?.type === "qr_login_success")) {
+            onQrLoginSuccess(data.signals[0])
+          }
+        }
+      } catch (e) {}
+    }, 2000)
+
     // Capture PWA install prompt for mobile & desktop
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault()
       setInstallPrompt(e)
     }
     window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt)
-    return () => window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt)
+    return () => {
+      clearInterval(pollInterval)
+      bcWeb?.close()
+      bcGlobal?.close()
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt)
+    }
   }, [router])
 
   const handleInstallPwa = async () => {
@@ -295,11 +341,31 @@ export default function Home() {
 
                   {/* Scan Beam Indicator */}
                   <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-transparent via-[#25d366] to-transparent shadow-[0_0_8px_#25d366] animate-pulse" />
+
+                  {/* Success Connection Overlay */}
+                  {isQrConnected && (
+                    <div className="absolute inset-0 bg-[#00a884]/95 rounded-xl flex flex-col items-center justify-center text-white p-4 animate-in zoom-in-95 duration-200 z-10">
+                      <CheckCircle2 className="w-14 h-14 mb-2 animate-bounce" />
+                      <p className="font-bold text-base">Device Paired!</p>
+                      <p className="text-xs opacity-90 text-center mt-1">Logging into Arixo Web...</p>
+                    </div>
+                  )}
                 </div>
               </div>
 
+              {/* Pairing Code Display */}
+              <div className="mt-3 text-center space-y-1">
+                <p className="text-[11px] text-muted-foreground flex items-center justify-center gap-1.5">
+                  <span>Pairing code:</span>
+                  <span className="font-mono font-bold text-foreground bg-neutral-200/80 dark:bg-neutral-800 px-2 py-0.5 rounded-md text-xs tracking-wider border border-border">
+                    {pairingCode}
+                  </span>
+                </p>
+                <p className="text-[10px] text-neutral-400">Scan QR with Arixo on your phone or enter code</p>
+              </div>
+
               {/* 1-Click Launch below QR */}
-              <div className="mt-4 w-full max-w-56 text-center">
+              <div className="mt-3 w-full max-w-56 text-center">
                 <Link href="/auth/login" className="w-full">
                   <Button
                     size="sm"

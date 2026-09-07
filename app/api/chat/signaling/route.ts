@@ -1,7 +1,17 @@
 import { NextRequest, NextResponse } from "next/server"
-import { addServerSignaling } from "@/lib/server-store"
+import { addServerSignaling, getServerSignaling } from "@/lib/server-store"
 
 export const dynamic = "force-dynamic"
+
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url)
+  const to = searchParams.get("to") || searchParams.get("userId") || searchParams.get("to_id")
+  if (!to) {
+    return NextResponse.json({ signals: [] })
+  }
+  const signals = getServerSignaling(to)
+  return NextResponse.json({ signals })
+}
 
 export async function POST(req: NextRequest) {
   try {

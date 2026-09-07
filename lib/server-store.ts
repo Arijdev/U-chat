@@ -667,6 +667,10 @@ export function addServerSignaling(sig: Omit<ServerSignaling, "id" | "created_at
   return newSig
 }
 
+export function getServerSignaling(toId: string): ServerSignaling[] {
+  return (store.signaling || []).filter((s) => s.to_id === toId)
+}
+
 // STORIES / STATUS
 export function getServerStories(): ServerStory[] {
   const now = new Date().getTime()
