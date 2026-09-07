@@ -136,12 +136,14 @@ let store: StoreData = {
       email: "wowarij@gmail.com",
       display_name: "Wow Arij",
       status: "online",
+      avatar_url: "/api/chat/avatar?userId=9f914f53-8e69-44d2-8759-4dc5cb935b4d",
     },
     {
       id: "24e4970f-7369-46ed-871b-a64ce2f3f3e0",
       email: "arij.chowdhuryr@gmail.com",
       display_name: "Arij Chowdhury",
       status: "online",
+      avatar_url: "/api/chat/avatar?userId=24e4970f-7369-46ed-871b-a64ce2f3f3e0",
     },
   ],
   conversations: [],
@@ -155,15 +157,53 @@ let store: StoreData = {
 type SSEListener = (data: { type: string; payload: any }) => void
 const sseListeners = new Map<string, Set<SSEListener>>()
 
+export function ensureFreshStore() {
+  try {
+    if (fs.existsSync(DATA_FILE)) {
+      const raw = fs.readFileSync(DATA_FILE, "utf-8")
+      const parsed = JSON.parse(raw)
+      
+      const userMap = new Map<string, ServerUser>()
+      store.users.forEach((u) => userMap.set(u.id, u))
+      if (Array.isArray(parsed.users)) {
+        parsed.users.forEach((u: ServerUser) => {
+          const prev = userMap.get(u.id)
+          userMap.set(u.id, prev ? { ...prev, ...u } : u)
+        })
+      }
+
+      const convMap = new Map<string, ServerConversation>()
+      store.conversations.forEach((c) => convMap.set(c.id, c))
+      if (Array.isArray(parsed.conversations)) {
+        parsed.conversations.forEach((c: ServerConversation) => convMap.set(c.id, c))
+      }
+
+      const msgMap = new Map<string, ServerMessage>()
+      store.messages.forEach((m) => msgMap.set(m.id, m))
+      if (Array.isArray(parsed.messages)) {
+        parsed.messages.forEach((m: ServerMessage) => msgMap.set(m.id, m))
+      }
+
+      store.users = Array.from(userMap.values())
+      store.conversations = Array.from(convMap.values())
+      store.messages = Array.from(msgMap.values())
+      if (Array.isArray(parsed.calls)) store.calls = parsed.calls
+      if (Array.isArray(parsed.stories)) store.stories = parsed.stories
+      if (Array.isArray(parsed.channels)) store.channels = parsed.channels
+      if (Array.isArray(parsed.communities)) store.communities = parsed.communities
+    }
+  } catch (e) {
+    // Ignore read errors
+  }
+}
+
 function initStore() {
   try {
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true })
     }
     if (fs.existsSync(DATA_FILE)) {
-      const raw = fs.readFileSync(DATA_FILE, "utf-8")
-      const parsed = JSON.parse(raw)
-      store = { ...store, ...parsed }
+      ensureFreshStore()
     } else {
       saveStore()
     }
@@ -186,6 +226,7 @@ function saveStore() {
 initStore()
 
 export function registerServerUser(user: Partial<ServerUser> & { id: string; email: string }): ServerUser {
+  ensureFreshStore()
   const emailLower = user.email.toLowerCase()
   const idx = store.users.findIndex((u) => u.email.toLowerCase() === emailLower || u.id === user.id)
 
@@ -222,6 +263,7 @@ export function updateServerUserProfile(
   userId: string,
   updates: { display_name?: string; status?: string; avatar_url?: string }
 ): ServerUser | null {
+  ensureFreshStore()
   const user = store.users.find((u) => u.id === userId)
   if (!user) return null
 
@@ -244,19 +286,55 @@ export function updateServerUserProfile(
 }
 
 export function getServerUsers(excludeId?: string): ServerUser[] {
+  ensureFreshStore()
   return store.users.filter((u) => !excludeId || u.id !== excludeId)
 }
 
 export function getServerUserById(id: string): ServerUser | undefined {
+  ensureFreshStore()
   return store.users.find((u) => u.id === id)
 }
 
 export function getServerUserByEmail(email: string): ServerUser | undefined {
+  ensureFreshStore()
   return store.users.find((u) => u.email.toLowerCase() === email.toLowerCase())
 }
 
 export function getServerConversations(userId: string): ServerConversation[] {
+  ensureFreshStore()
   const userMap = new Map(store.users.map((u) => [u.id, u]))
+
+  const resolveUser = (pId: string): ServerUser => {
+    const found = userMap.get(pId)
+    if (found) return found
+
+    if (pId === "9f914f53-8e69-44d2-8759-4dc5cb935b4d") {
+      return {
+        id: pId,
+        email: "wowarij@gmail.com",
+        display_name: "Wow Arij",
+        status: "online",
+        avatar_url: `/api/chat/avatar?userId=${pId}`,
+      }
+    }
+    if (pId === "24e4970f-7369-46ed-871b-a64ce2f3f3e0") {
+      return {
+        id: pId,
+        email: "arij.chowdhuryr@gmail.com",
+        display_name: "Arij Chowdhury",
+        status: "online",
+        avatar_url: `/api/chat/avatar?userId=${pId}`,
+      }
+    }
+
+    return {
+      id: pId,
+      email: `${pId.slice(0, 8)}@uchat.com`,
+      display_name: pId.slice(0, 8),
+      status: "online",
+      avatar_url: `/api/chat/avatar?userId=${pId}`,
+    }
+  }
 
   // Ensure default conversation between the two primary users exists
   if (store.conversations.length === 0 && store.users.length >= 2) {
@@ -281,11 +359,11 @@ export function getServerConversations(userId: string): ServerConversation[] {
     )
     .map((c) => ({
       ...c,
-      participant_1: userMap.get(c.participant_1_id) || { id: c.participant_1_id, email: "user1@example.com", display_name: "User 1" },
-      participant_2: userMap.get(c.participant_2_id) || { id: c.participant_2_id, email: "user2@example.com", display_name: "User 2" },
+      participant_1: resolveUser(c.participant_1_id),
+      participant_2: resolveUser(c.participant_2_id),
       members:
         c.is_group && Array.isArray(c.group_members)
-          ? c.group_members.map((mId) => userMap.get(mId) || { id: mId, email: "", display_name: "Member" })
+          ? c.group_members.map((mId) => resolveUser(mId))
           : undefined,
     }))
     .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
@@ -368,6 +446,7 @@ export function createServerConversation(participant1Id: string, participant2Id:
 }
 
 export function getServerMessages(conversationId: string, userId?: string): ServerMessage[] {
+  ensureFreshStore()
   return store.messages
     .filter((m) => {
       if (m.conversation_id !== conversationId) return false
@@ -376,10 +455,16 @@ export function getServerMessages(conversationId: string, userId?: string): Serv
       }
       return true
     })
-    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+    .sort((a, b) => {
+      const timeA = new Date(a.created_at).getTime()
+      const timeB = new Date(b.created_at).getTime()
+      if (timeA !== timeB) return timeA - timeB
+      return String(a.id).localeCompare(String(b.id))
+    })
 }
 
 export function addServerMessage(msg: Omit<ServerMessage, "id" | "created_at"> & { id?: string; created_at?: string }): ServerMessage {
+  ensureFreshStore()
   const newMsg: ServerMessage = {
     id: msg.id || `msg_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     conversation_id: msg.conversation_id,

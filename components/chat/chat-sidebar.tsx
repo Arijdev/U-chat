@@ -489,7 +489,9 @@ export default function ChatSidebar({
             const otherParticipant = conv.participant_1_id === user.id ? conv.participant_2 : conv.participant_1
             const title = isGroup
               ? conv.group_name
-              : otherParticipant?.display_name || otherParticipant?.email?.split("@")[0] || "Contact"
+              : otherParticipant?.display_name && !otherParticipant.display_name.startsWith("User ")
+              ? otherParticipant.display_name
+              : otherParticipant?.email?.split("@")[0] || "Contact"
             const subtitle = isGroup ? `${conv.group_members?.length || 2} members` : otherParticipant?.status || otherParticipant?.email
 
             return (
@@ -506,12 +508,12 @@ export default function ChatSidebar({
                 <div className="w-11 h-11 rounded-full overflow-hidden bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-bold text-base shrink-0 shadow-xs">
                   {isGroup ? (
                     conv.group_avatar ? (
-                      <img src={conv.group_avatar} alt={title} className="w-full h-full object-cover" />
+                      <img src={conv.group_avatar} alt={title} className="w-full h-full object-cover" loading="eager" />
                     ) : (
                       <Users className="w-5 h-5 text-white" />
                     )
                   ) : otherParticipant?.avatar_url ? (
-                    <img src={otherParticipant.avatar_url} alt={title} className="w-full h-full object-cover" />
+                    <img src={otherParticipant.avatar_url} alt={title} className="w-full h-full object-cover" loading="eager" />
                   ) : (
                     title?.[0]?.toUpperCase() || "?"
                   )}

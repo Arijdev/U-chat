@@ -24,6 +24,7 @@ interface MessageBubbleProps {
   isGroup?: boolean
   senderName?: string
   onGetDecrypted: (msg: any) => Promise<string>
+  getCachedDecrypted?: (msg: any) => string | undefined
   onDelete: (msg: any) => void
   onReply?: (msg: any) => void
   onReact?: (msgId: string, emoji: string) => void
@@ -39,12 +40,20 @@ export const MessageBubble = memo(function MessageBubble({
   isGroup,
   senderName,
   onGetDecrypted,
+  getCachedDecrypted,
   onDelete,
   onReply,
   onReact,
   onStar,
 }: MessageBubbleProps) {
-  const [content, setContent] = useState(msg.content)
+  const [content, setContent] = useState(() => {
+    if (!msg.is_encrypted) return msg.content
+    if (getCachedDecrypted) {
+      const cached = getCachedDecrypted(msg)
+      if (cached !== undefined) return cached
+    }
+    return ""
+  })
   const [isPlayingAudio, setIsPlayingAudio] = useState(false)
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1)
   const [audioEl, setAudioEl] = useState<HTMLAudioElement | null>(null)
@@ -70,8 +79,25 @@ export const MessageBubble = memo(function MessageBubble({
   }, [showMenu])
 
   useEffect(() => {
-    onGetDecrypted(msg).then(setContent)
-  }, [msg.id, msg.content, onGetDecrypted])
+    let active = true
+    if (!msg.is_encrypted) {
+      setContent(msg.content)
+      return
+    }
+    if (getCachedDecrypted) {
+      const cached = getCachedDecrypted(msg)
+      if (cached !== undefined) {
+        setContent(cached)
+        return
+      }
+    }
+    onGetDecrypted(msg).then((res) => {
+      if (active) setContent(res)
+    })
+    return () => {
+      active = false
+    }
+  }, [msg.id, msg.content, msg.is_encrypted, onGetDecrypted, getCachedDecrypted])
 
   const toggleAudio = (url: string) => {
     if (!audioEl) {
@@ -269,7 +295,13 @@ export const MessageBubble = memo(function MessageBubble({
 
             {/* Regular Text Message */}
             {(!msg.message_type || msg.message_type === "text") && (
-              <p className="break-words text-sm leading-relaxed whitespace-pre-wrap">{content}</p>
+              <p className="break-words text-sm leading-relaxed whitespace-pre-wrap">
+                {msg.is_encrypted && !content ? (
+                  <span className="opacity-50 text-xs">...</span>
+                ) : (
+                  content
+                )}
+              </p>
             )}
           </>
         )}

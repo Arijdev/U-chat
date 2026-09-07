@@ -76,7 +76,25 @@ export default function ChatLayout({ user }: { user: User }) {
   const loadConversations = useCallback(async () => {
     try {
       const convs = await apiGetConversations(user.id)
-      setConversations(convs)
+      setConversations((prev) => {
+        if (
+          prev.length === convs.length &&
+          prev.every((p, idx) => {
+            const c = convs[idx]
+            return (
+              p.id === c?.id &&
+              p.updated_at === c?.updated_at &&
+              p.participant_1?.display_name === c?.participant_1?.display_name &&
+              p.participant_1?.avatar_url === c?.participant_1?.avatar_url &&
+              p.participant_2?.display_name === c?.participant_2?.display_name &&
+              p.participant_2?.avatar_url === c?.participant_2?.avatar_url
+            )
+          })
+        ) {
+          return prev
+        }
+        return convs
+      })
     } catch (e) {
       console.warn("Error loading conversations:", e)
     } finally {
@@ -256,45 +274,48 @@ export default function ChatLayout({ user }: { user: User }) {
   }
 
   // Start outgoing call from ChatWindow
-  const handleStartCall = async (type: "voice" | "video", targetUser: any) => {
-    if (!targetUser?.id) return
+  const handleStartCall = useCallback(
+    async (type: "voice" | "video", targetUser: any) => {
+      if (!targetUser?.id) return
 
-    try {
-      const res = await fetch("/api/chat/calls", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          caller_id: user.id,
-          receiver_id: targetUser.id,
-          call_type: type,
-          conversation_id: selectedConversation || undefined,
-        }),
-      })
-      const callData = await res.json()
+      try {
+        const res = await fetch("/api/chat/calls", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            caller_id: user.id,
+            receiver_id: targetUser.id,
+            call_type: type,
+            conversation_id: selectedConversation || undefined,
+          }),
+        })
+        const callData = await res.json()
 
-      setActiveCall({
-        callId: callData.id,
-        callType: type,
-        otherUserId: targetUser.id,
-        otherUserName: targetUser.display_name || targetUser.email?.split("@")[0] || "Contact",
-        conversationId: selectedConversation || undefined,
-        isCaller: true,
-        startTime: Date.now(),
-      })
+        setActiveCall({
+          callId: callData.id,
+          callType: type,
+          otherUserId: targetUser.id,
+          otherUserName: targetUser.display_name || targetUser.email?.split("@")[0] || "Contact",
+          conversationId: selectedConversation || undefined,
+          isCaller: true,
+          startTime: Date.now(),
+        })
 
-      signalingRef.current?.send({
-        type: "call",
-        callId: callData.id,
-        from: user.id,
-        to: targetUser.id,
-        callType: type,
-        conversationId: selectedConversation || undefined,
-        fromName: user.user_metadata?.display_name || user.email?.split("@")[0] || "Contact",
-      })
-    } catch (e) {
-      console.error("Start call error:", e)
-    }
-  }
+        signalingRef.current?.send({
+          type: "call",
+          callId: callData.id,
+          from: user.id,
+          to: targetUser.id,
+          callType: type,
+          conversationId: selectedConversation || undefined,
+          fromName: user.user_metadata?.display_name || user.email?.split("@")[0] || "Contact",
+        })
+      } catch (e) {
+        console.error("Start call error:", e)
+      }
+    },
+    [user.id, user.user_metadata?.display_name, user.email, selectedConversation]
+  )
 
   // End active call
   const handleCallEnd = async (duration: number) => {
@@ -372,8 +393,10 @@ export default function ChatLayout({ user }: { user: User }) {
 
             {selectedConversation ? (
               <ChatWindow
+                key={selectedConversation}
                 conversationId={selectedConversation}
                 user={user}
+                initialConversation={conversations.find((c) => c.id === selectedConversation)}
                 onBack={() => setSelectedConversation(null)}
                 onStartCall={handleStartCall}
               />

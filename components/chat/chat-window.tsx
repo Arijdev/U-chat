@@ -42,15 +42,63 @@ import { getProfileById, getKnownProfiles } from "@/lib/dataset"
 interface ChatWindowProps {
   conversationId: string
   user: User
+  initialConversation?: any
   onBack?: () => void
   onStartCall?: (type: "voice" | "video", otherUser: any) => void
 }
 
-export default function ChatWindow({ conversationId, user, onBack, onStartCall }: ChatWindowProps) {
+function extractOtherUserFromConv(conv: any, myUserId: string): any {
+  if (!conv) return null
+  if (conv.is_group) {
+    return {
+      id: conv.id,
+      is_group: true,
+      group_name: conv.group_name || "Group",
+      display_name: conv.group_name || "Group",
+      group_avatar: conv.group_avatar || "",
+      avatar_url: conv.group_avatar || "",
+      creator_id: conv.participant_1_id,
+      group_members: conv.group_members || [],
+      members: conv.members || [],
+      status: `${(conv.group_members || []).length} members`,
+    }
+  }
+  const otherId = conv.participant_1_id === myUserId ? conv.participant_2_id : conv.participant_1_id
+  const profile = conv.participant_1_id === myUserId ? conv.participant_2 : conv.participant_1
+  if (profile) return profile
+
+  return (
+    getProfileById(otherId) ||
+    getKnownProfiles().find((p) => p.id === otherId) || {
+      id: otherId,
+      display_name: otherId.slice(0, 8),
+      email: `${otherId.slice(0, 8)}@uchat.com`,
+      avatar_url: `/api/chat/avatar?userId=${otherId}`,
+    }
+  )
+}
+
+function sortAndDedupeMessages(list: any[]): any[] {
+  const map = new Map<string, any>()
+  list.forEach((m) => {
+    if (m && m.id) {
+      const existing = map.get(m.id)
+      map.set(m.id, existing ? { ...existing, ...m } : m)
+    }
+  })
+  return Array.from(map.values()).sort((a, b) => {
+    const timeA = new Date(a.created_at || 0).getTime()
+    const timeB = new Date(b.created_at || 0).getTime()
+    if (timeA !== timeB) return timeA - timeB
+    return String(a.id).localeCompare(String(b.id))
+  })
+}
+
+export default function ChatWindow({ conversationId, user, initialConversation, onBack, onStartCall }: ChatWindowProps) {
   const [messages, setMessages] = useState<any[]>([])
   const [newMessage, setNewMessage] = useState("")
   const [loading, setLoading] = useState(true)
-  const [otherUser, setOtherUser] = useState<any>(null)
+  const [otherUser, setOtherUser] = useState<any>(() => extractOtherUserFromConv(initialConversation, user.id))
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const [showAttachMenu, setShowAttachMenu] = useState(false)
   const [searchInChat, setSearchInChat] = useState("")
@@ -121,7 +169,7 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
       }
     }
     prevCountRef.current = messages.length
-  }, [messages, user.id])
+  }, [messages.length, user.id])
 
   const getDecryptedContent = useCallback(
     async (msg: any): Promise<string> => {
@@ -153,46 +201,27 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
       const conv = convs.find((c) => c.id === conversationId)
 
       if (conv && isSubscribed) {
-        if (conv.is_group) {
-          const membersList = conv.members || []
-          setOtherUser({
-            id: conv.id,
-            is_group: true,
-            group_name: conv.group_name || "Group",
-            display_name: conv.group_name || "Group",
-            group_avatar: conv.group_avatar || "",
-            avatar_url: conv.group_avatar || "",
-            creator_id: conv.participant_1_id,
-            group_members: conv.group_members || [],
-            members: membersList,
-            status: `${(conv.group_members || []).length} members`,
+        const extracted = extractOtherUserFromConv(conv, user.id)
+        if (extracted) {
+          setOtherUser((prev: any) => {
+            if (!prev) return extracted
+            return {
+              ...prev,
+              ...extracted,
+              display_name:
+                extracted.display_name && !extracted.display_name.startsWith("User ")
+                  ? extracted.display_name
+                  : prev.display_name || extracted.display_name,
+              avatar_url: extracted.avatar_url || prev.avatar_url || "",
+            }
           })
-        } else {
-          const otherId = conv.participant_1_id === user.id ? conv.participant_2_id : conv.participant_1_id
-          const profile =
-            conv.participant_1_id === user.id
-              ? conv.participant_2
-              : conv.participant_1
-
-          if (profile) {
-            setOtherUser(profile)
-          } else {
-            const fallback =
-              getProfileById(otherId) ||
-              getKnownProfiles().find((p) => p.id === otherId) || {
-                id: otherId,
-                display_name: otherId.slice(0, 8),
-                email: `${otherId.slice(0, 8)}@uchat.com`,
-              }
-            setOtherUser(fallback)
-          }
         }
       }
 
       // 2. Get messages for this conversation (filtering out messages deleted for me)
       const msgList = await apiGetMessages(conversationId, user.id)
       if (isSubscribed) {
-        setMessages(msgList)
+        setMessages(sortAndDedupeMessages(msgList))
         setLoading(false)
       }
     }
@@ -223,9 +252,9 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
               if (optimisticIdx !== -1) {
                 const updated = [...prev]
                 updated[optimisticIdx] = newMsg
-                return updated
+                return sortAndDedupeMessages(updated)
               }
-              return [...prev, newMsg]
+              return sortAndDedupeMessages([...prev, newMsg])
             })
           }
           break
@@ -256,24 +285,39 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
         case "user_updated": {
           const updated = event.payload
           if (updated && otherUser && updated.id === otherUser.id) {
-            setOtherUser((prev: any) => ({ ...prev, ...updated }))
+            setOtherUser((prev: any) => ({
+              ...prev,
+              ...updated,
+              avatar_url: updated.avatar_url || prev?.avatar_url || "",
+            }))
           }
           break
         }
 
         case "heartbeat_poll": {
-          // Quiet background sync to ensure zero missed messages without deleting in-flight messages
+          // Quiet background sync to ensure zero missed messages without re-rendering when unchanged
           apiGetMessages(conversationId, user.id).then((latest) => {
             if (!isSubscribed) return
             setMessages((prev) => {
               const pendingOptimistic = prev.filter(
                 (m) => (m.id.startsWith("msg-") || m.id.startsWith("temp-")) && !latest.some((l) => l.id === m.id)
               )
-              const combined = [...latest, ...pendingOptimistic]
-              if (combined.length !== prev.length || combined[combined.length - 1]?.id !== prev[prev.length - 1]?.id) {
-                return combined
+              const combined = sortAndDedupeMessages([...latest, ...pendingOptimistic])
+
+              if (combined.length === prev.length) {
+                const isIdentical = prev.every((p, idx) => {
+                  const c = combined[idx]
+                  return (
+                    p.id === c.id &&
+                    p.content === c.content &&
+                    p.is_deleted_for_everyone === c.is_deleted_for_everyone &&
+                    p.is_starred === c.is_starred &&
+                    JSON.stringify(p.reactions) === JSON.stringify(c.reactions)
+                  )
+                })
+                if (isIdentical) return prev
               }
-              return prev
+              return combined
             })
           })
           break
@@ -288,7 +332,7 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
       isSubscribed = false
       disconnectStream()
     }
-  }, [conversationId, user.id, otherUser?.display_name])
+  }, [conversationId, user.id])
 
   // SEND TEXT MESSAGE
   const handleSendMessage = async () => {
@@ -311,6 +355,7 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
 
       // Optimistic message with unique ID passed through to server
       const tempId = `msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+      const nowIso = new Date().toISOString()
       const optimisticMsg: any = {
         id: tempId,
         conversation_id: conversationId,
@@ -319,11 +364,11 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
         message_type: "text",
         is_encrypted: isEncrypted,
         reply_to: replyingTo || undefined,
-        created_at: new Date().toISOString(),
+        created_at: nowIso,
       }
 
       decryptedMessagesRef.current.set(tempId, messageText)
-      setMessages((prev) => [...prev, optimisticMsg])
+      setMessages((prev) => sortAndDedupeMessages([...prev, optimisticMsg]))
       const currentReply = replyingTo
       setReplyingTo(null)
 
@@ -336,6 +381,7 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
         message_type: "text",
         is_encrypted: isEncrypted,
         reply_to: currentReply || undefined,
+        created_at: nowIso,
       })
 
       if (saved && saved.id) {
@@ -367,6 +413,7 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
     const currentReply = replyingTo
     setReplyingTo(null)
 
+    const nowIso = new Date().toISOString()
     const optimisticMsg: any = {
       id: tempId,
       conversation_id: conversationId,
@@ -378,10 +425,10 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
       file_size: attachment.file_size,
       is_encrypted: false,
       reply_to: currentReply || undefined,
-      created_at: new Date().toISOString(),
+      created_at: nowIso,
     }
 
-    setMessages((prev) => [...prev, optimisticMsg])
+    setMessages((prev) => sortAndDedupeMessages([...prev, optimisticMsg]))
 
     try {
       const saved = await apiSendMessage({
@@ -395,6 +442,7 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
         file_size: attachment.file_size,
         is_encrypted: false,
         reply_to: currentReply || undefined,
+        created_at: nowIso,
       })
 
       if (saved && saved.id) {
@@ -646,18 +694,18 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
     setShowEmojiPicker(false)
   }
 
-  // Filter messages when search is active, and ensure strictly unique keys
+  const getCachedDecrypted = useCallback((msg: any) => {
+    if (!msg.is_encrypted) return msg.content
+    return decryptedMessagesRef.current.get(msg.id)
+  }, [])
+
+  // Filter messages when search is active, and ensure strictly unique keys and order
   const displayedMessages = useMemo(() => {
     const list = searchInChat.trim()
       ? messages.filter((m) => m.content?.toLowerCase().includes(searchInChat.toLowerCase()))
       : messages
 
-    const seen = new Set<string>()
-    return list.filter((m) => {
-      if (!m.id || seen.has(m.id)) return false
-      seen.add(m.id)
-      return true
-    })
+    return sortAndDedupeMessages(list)
   }, [messages, searchInChat])
 
   return (
@@ -706,6 +754,7 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
                     src={otherUser.avatar_url || otherUser.group_avatar}
                     alt={otherUser.display_name || "Group"}
                     className="w-full h-full object-cover"
+                    loading="eager"
                   />
                 ) : otherUser?.is_group ? (
                   <Users className="w-5 h-5 text-white" />
@@ -719,7 +768,9 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
             </div>
             <div className="min-w-0">
               <p className="font-semibold text-foreground text-sm md:text-base truncate leading-tight">
-                {otherUser?.display_name || otherUser?.email?.split("@")[0] || "Chat"}
+                {otherUser?.display_name && !otherUser.display_name.startsWith("User ")
+                  ? otherUser.display_name
+                  : otherUser?.email?.split("@")[0] || "Chat"}
               </p>
               <p className="text-[11px] text-muted-foreground truncate font-normal">
                 {otherUser?.is_group
@@ -891,6 +942,7 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
               isGroup={Boolean(otherUser?.is_group)}
               senderName={getSenderDisplayName(msg.sender_id)}
               onGetDecrypted={getDecryptedContent}
+              getCachedDecrypted={getCachedDecrypted}
               onDelete={handleDeleteMessage}
               onReply={setReplyingTo}
               onReact={handleReact}

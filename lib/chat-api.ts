@@ -117,7 +117,7 @@ export async function apiGetMessages(conversationId: string, userId?: string): P
 }
 
 export async function apiSendMessage(
-  message: (Omit<ChatMessage, "id" | "created_at"> & { id?: string })
+  message: (Omit<ChatMessage, "id" | "created_at"> & { id?: string; created_at?: string })
 ): Promise<ChatMessage> {
   const res = await fetch("/api/chat/messages", {
     method: "POST",
