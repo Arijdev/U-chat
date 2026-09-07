@@ -1,5 +1,6 @@
 import fs from "fs"
 import path from "path"
+import os from "os"
 
 export interface ServerUser {
   id: string
@@ -121,7 +122,10 @@ interface StoreData {
   communities?: ServerCommunity[]
 }
 
-const DATA_DIR = path.join(process.cwd(), ".uchat_data")
+const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME)
+const DATA_DIR = isServerless
+  ? path.join(os.tmpdir(), "uchat_data")
+  : path.join(process.cwd(), ".uchat_data")
 const DATA_FILE = path.join(DATA_DIR, "store.json")
 
 // In-memory cache + file persistence
