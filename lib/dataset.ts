@@ -36,17 +36,17 @@ const SYNC_CHANNEL_NAME = "u_chat_dataset_sync"
 
 export const DEFAULT_PROFILES: DatasetProfile[] = [
   {
-    id: "profile-wowarij-default-id",
+    id: "9f914f53-8e69-44d2-8759-4dc5cb935b4d",
     email: "wowarij@gmail.com",
-    display_name: "Wow Arij",
-    avatar_url: "",
+    display_name: "orio",
+    avatar_url: "/api/chat/avatar?userId=9f914f53-8e69-44d2-8759-4dc5cb935b4d",
     status: "online",
   },
   {
-    id: "profile-arij-chowdhuryr-default-id",
+    id: "24e4970f-7369-46ed-871b-a64ce2f3f3e0",
     email: "arij.chowdhuryr@gmail.com",
-    display_name: "Arij Chowdhury",
-    avatar_url: "",
+    display_name: "arij",
+    avatar_url: "/api/chat/avatar?userId=24e4970f-7369-46ed-871b-a64ce2f3f3e0",
     status: "online",
   },
 ]

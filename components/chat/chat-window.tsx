@@ -47,6 +47,15 @@ interface ChatWindowProps {
   onStartCall?: (type: "voice" | "video", otherUser: any) => void
 }
 
+function cleanAvatarUrl(url?: string): string {
+  if (!url) return ""
+  if (url.startsWith("/api/chat/avatar?userId=")) {
+    const match = url.match(/\/api\/chat\/avatar\?userId=([a-zA-Z0-9_-]+)/)
+    if (match) return `/api/chat/avatar?userId=${match[1]}`
+  }
+  return url
+}
+
 function extractOtherUserFromConv(conv: any, myUserId: string): any {
   if (!conv) return null
   if (conv.is_group) {
@@ -55,8 +64,8 @@ function extractOtherUserFromConv(conv: any, myUserId: string): any {
       is_group: true,
       group_name: conv.group_name || "Group",
       display_name: conv.group_name || "Group",
-      group_avatar: conv.group_avatar || "",
-      avatar_url: conv.group_avatar || "",
+      group_avatar: cleanAvatarUrl(conv.group_avatar || ""),
+      avatar_url: cleanAvatarUrl(conv.group_avatar || ""),
       creator_id: conv.participant_1_id,
       group_members: conv.group_members || [],
       members: conv.members || [],
@@ -65,17 +74,27 @@ function extractOtherUserFromConv(conv: any, myUserId: string): any {
   }
   const otherId = conv.participant_1_id === myUserId ? conv.participant_2_id : conv.participant_1_id
   const profile = conv.participant_1_id === myUserId ? conv.participant_2 : conv.participant_1
-  if (profile) return profile
-
-  return (
-    getProfileById(otherId) ||
-    getKnownProfiles().find((p) => p.id === otherId) || {
-      id: otherId,
-      display_name: otherId.slice(0, 8),
-      email: `${otherId.slice(0, 8)}@uchat.com`,
-      avatar_url: `/api/chat/avatar?userId=${otherId}`,
+  if (profile) {
+    return {
+      ...profile,
+      avatar_url: cleanAvatarUrl(profile.avatar_url),
     }
-  )
+  }
+
+  const found = getProfileById(otherId) || getKnownProfiles().find((p) => p.id === otherId)
+  if (found) {
+    return {
+      ...found,
+      avatar_url: cleanAvatarUrl(found.avatar_url || `/api/chat/avatar?userId=${otherId}`),
+    }
+  }
+
+  return {
+    id: otherId,
+    display_name: otherId.slice(0, 8),
+    email: `${otherId.slice(0, 8)}@uchat.com`,
+    avatar_url: `/api/chat/avatar?userId=${otherId}`,
+  }
 }
 
 function sortAndDedupeMessages(list: any[]): any[] {
@@ -205,14 +224,22 @@ export default function ChatWindow({ conversationId, user, initialConversation, 
         if (extracted) {
           setOtherUser((prev: any) => {
             if (!prev) return extracted
+            // Lock display_name and avatar_url once established so they never flip-flop
+            const prevHasValidName =
+              prev.display_name &&
+              !prev.display_name.startsWith("User ") &&
+              prev.display_name !== "Contact"
+            const nameToKeep = prevHasValidName
+              ? prev.display_name
+              : extracted.display_name || prev.display_name
+            const avatarToKeep = cleanAvatarUrl(prev.avatar_url || extracted.avatar_url || "")
+
             return {
-              ...prev,
               ...extracted,
-              display_name:
-                extracted.display_name && !extracted.display_name.startsWith("User ")
-                  ? extracted.display_name
-                  : prev.display_name || extracted.display_name,
-              avatar_url: extracted.avatar_url || prev.avatar_url || "",
+              ...prev,
+              display_name: nameToKeep,
+              avatar_url: avatarToKeep,
+              status: extracted.status || prev.status,
             }
           })
         }
@@ -288,7 +315,8 @@ export default function ChatWindow({ conversationId, user, initialConversation, 
             setOtherUser((prev: any) => ({
               ...prev,
               ...updated,
-              avatar_url: updated.avatar_url || prev?.avatar_url || "",
+              display_name: updated.display_name || prev?.display_name,
+              avatar_url: cleanAvatarUrl(updated.avatar_url || prev?.avatar_url || ""),
             }))
           }
           break
@@ -751,7 +779,7 @@ export default function ChatWindow({ conversationId, user, initialConversation, 
               <div className="w-10 h-10 rounded-full overflow-hidden bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-semibold text-base shadow-xs">
                 {otherUser?.avatar_url || otherUser?.group_avatar ? (
                   <img
-                    src={otherUser.avatar_url || otherUser.group_avatar}
+                    src={cleanAvatarUrl(otherUser.avatar_url || otherUser.group_avatar)}
                     alt={otherUser.display_name || "Group"}
                     className="w-full h-full object-cover"
                     loading="eager"

@@ -134,14 +134,14 @@ let store: StoreData = {
     {
       id: "9f914f53-8e69-44d2-8759-4dc5cb935b4d",
       email: "wowarij@gmail.com",
-      display_name: "Wow Arij",
+      display_name: "orio",
       status: "online",
       avatar_url: "/api/chat/avatar?userId=9f914f53-8e69-44d2-8759-4dc5cb935b4d",
     },
     {
       id: "24e4970f-7369-46ed-871b-a64ce2f3f3e0",
       email: "arij.chowdhuryr@gmail.com",
-      display_name: "Arij Chowdhury",
+      display_name: "arij",
       status: "online",
       avatar_url: "/api/chat/avatar?userId=24e4970f-7369-46ed-871b-a64ce2f3f3e0",
     },
@@ -300,19 +300,33 @@ export function getServerUserByEmail(email: string): ServerUser | undefined {
   return store.users.find((u) => u.email.toLowerCase() === email.toLowerCase())
 }
 
+function normalizeAvatarUrl(url?: string): string {
+  if (!url) return ""
+  if (url.startsWith("/api/chat/avatar?userId=")) {
+    const match = url.match(/\/api\/chat\/avatar\?userId=([a-zA-Z0-9_-]+)/)
+    if (match) return `/api/chat/avatar?userId=${match[1]}`
+  }
+  return url
+}
+
 export function getServerConversations(userId: string): ServerConversation[] {
   ensureFreshStore()
   const userMap = new Map(store.users.map((u) => [u.id, u]))
 
   const resolveUser = (pId: string): ServerUser => {
     const found = userMap.get(pId)
-    if (found) return found
+    if (found) {
+      return {
+        ...found,
+        avatar_url: normalizeAvatarUrl(found.avatar_url),
+      }
+    }
 
     if (pId === "9f914f53-8e69-44d2-8759-4dc5cb935b4d") {
       return {
         id: pId,
         email: "wowarij@gmail.com",
-        display_name: "Wow Arij",
+        display_name: "orio",
         status: "online",
         avatar_url: `/api/chat/avatar?userId=${pId}`,
       }
@@ -321,7 +335,7 @@ export function getServerConversations(userId: string): ServerConversation[] {
       return {
         id: pId,
         email: "arij.chowdhuryr@gmail.com",
-        display_name: "Arij Chowdhury",
+        display_name: "arij",
         status: "online",
         avatar_url: `/api/chat/avatar?userId=${pId}`,
       }

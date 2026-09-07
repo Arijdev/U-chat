@@ -51,6 +51,15 @@ interface ChatSidebarProps {
 
 type FilterTab = "all" | "unread" | "favorites" | "groups"
 
+function cleanAvatarUrl(url?: string): string {
+  if (!url) return ""
+  if (url.startsWith("/api/chat/avatar?userId=")) {
+    const match = url.match(/\/api\/chat\/avatar\?userId=([a-zA-Z0-9_-]+)/)
+    if (match) return `/api/chat/avatar?userId=${match[1]}`
+  }
+  return url
+}
+
 export default function ChatSidebar({
   user,
   conversations,
@@ -513,7 +522,7 @@ export default function ChatSidebar({
                       <Users className="w-5 h-5 text-white" />
                     )
                   ) : otherParticipant?.avatar_url ? (
-                    <img src={otherParticipant.avatar_url} alt={title} className="w-full h-full object-cover" loading="eager" />
+                    <img src={cleanAvatarUrl(otherParticipant.avatar_url)} alt={title} className="w-full h-full object-cover" loading="eager" />
                   ) : (
                     title?.[0]?.toUpperCase() || "?"
                   )}
