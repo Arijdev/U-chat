@@ -54,7 +54,10 @@ export function ProfileDrawer({
     currentProfile?.status ||
     user.user_metadata?.status ||
     "Hey there! I am using Arixo."
-  const initialAvatar = currentProfile?.avatar_url || user.user_metadata?.avatar_url || ""
+  const initialAvatar =
+    currentProfile?.avatar_url ||
+    user.user_metadata?.avatar_url ||
+    `/api/chat/avatar?userId=${user.id}`
 
   const [displayName, setDisplayName] = useState(initialName)
   const [status, setStatus] = useState(initialStatus)
@@ -153,6 +156,10 @@ export function ProfileDrawer({
         const data = await res.json()
         const cleanAvatarUrl = data.avatar_url || `/api/chat/avatar?userId=${user.id}&t=${Date.now()}`
 
+        try {
+          localStorage.setItem(`u_chat_avatar_${user.id}`, cleanAvatarUrl)
+        } catch (e) {}
+
         setAvatarUrl(cleanAvatarUrl)
         await saveUpdates({ avatar_url: cleanAvatarUrl })
       } catch (err) {
@@ -195,9 +202,9 @@ export function ProfileDrawer({
         {/* Profile Photo Section */}
         <div className="py-7 flex flex-col items-center justify-center relative">
           <div className="relative group">
-            {avatarUrl ? (
+            {avatarUrl || user.id ? (
               <img
-                src={avatarUrl}
+                src={avatarUrl || `/api/chat/avatar?userId=${user.id}`}
                 alt="Profile"
                 className="w-48 h-48 rounded-full object-cover shadow-lg border-4 border-white dark:border-[#202c33]"
               />

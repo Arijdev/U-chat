@@ -68,7 +68,7 @@ export function SettingsDrawer({ user, onClose, onOpenProfile }: SettingsDrawerP
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
 
   const displayName = user.user_metadata?.display_name || user.email?.split("@")[0] || "User"
-  const avatarUrl = user.user_metadata?.avatar_url
+  const avatarUrl = user.user_metadata?.avatar_url || `/api/chat/avatar?userId=${user.id}`
   const status = user.user_metadata?.status || "Hey there! I am using Arixo."
 
   const handleLogout = async () => {

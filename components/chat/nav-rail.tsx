@@ -45,7 +45,7 @@ export function NavRail({
   hideMobileNav = false,
   className = "",
 }: NavRailProps) {
-  const avatarUrl = user.user_metadata?.avatar_url
+  const avatarUrl = user.user_metadata?.avatar_url || `/api/chat/avatar?userId=${user.id}`
   const displayName = user.user_metadata?.display_name || user.email?.split("@")[0] || "User"
 
   return (

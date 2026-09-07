@@ -73,9 +73,9 @@ export function ContactInfoDrawer({
         {/* Contact Avatar & Name Card */}
         <div className="bg-white dark:bg-[#202c33] p-6 flex flex-col items-center justify-center text-center shadow-2xs border-b border-border/40">
           <div className="w-36 h-36 rounded-full overflow-hidden shadow-md mb-4 border-4 border-card">
-            {contact.avatar_url ? (
+            {contact.avatar_url || contact.id ? (
               <img
-                src={contact.avatar_url}
+                src={contact.avatar_url || `/api/chat/avatar?userId=${contact.id}`}
                 alt={contact.display_name || "Contact"}
                 className="w-full h-full object-cover"
               />

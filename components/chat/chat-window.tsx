@@ -777,9 +777,9 @@ export default function ChatWindow({ conversationId, user, initialConversation, 
           >
             <div className="relative shrink-0">
               <div className="w-10 h-10 rounded-full overflow-hidden bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-semibold text-base shadow-xs">
-                {otherUser?.avatar_url || otherUser?.group_avatar ? (
+                {otherUser?.avatar_url || otherUser?.group_avatar || otherUser?.id ? (
                   <img
-                    src={cleanAvatarUrl(otherUser.avatar_url || otherUser.group_avatar)}
+                    src={cleanAvatarUrl(otherUser.avatar_url || otherUser.group_avatar || `/api/chat/avatar?userId=${otherUser.id}`)}
                     alt={otherUser.display_name || "Group"}
                     className="w-full h-full object-cover"
                     loading="eager"

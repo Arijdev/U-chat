@@ -521,8 +521,13 @@ export default function ChatSidebar({
                     ) : (
                       <Users className="w-5 h-5 text-white" />
                     )
-                  ) : otherParticipant?.avatar_url ? (
-                    <img src={cleanAvatarUrl(otherParticipant.avatar_url)} alt={title} className="w-full h-full object-cover" loading="eager" />
+                  ) : otherParticipant?.avatar_url || otherParticipant?.id ? (
+                    <img
+                      src={cleanAvatarUrl(otherParticipant.avatar_url || `/api/chat/avatar?userId=${otherParticipant.id}`)}
+                      alt={title}
+                      className="w-full h-full object-cover"
+                      loading="eager"
+                    />
                   ) : (
                     title?.[0]?.toUpperCase() || "?"
                   )}
