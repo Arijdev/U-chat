@@ -136,14 +136,14 @@ let store: StoreData = {
       email: "wowarij@gmail.com",
       display_name: "orio",
       status: "online",
-      avatar_url: "/api/chat/avatar?userId=9f914f53-8e69-44d2-8759-4dc5cb935b4d",
+      avatar_url: "/api/chat/avatar?userId=9f914f53-8e69-44d2-8759-4dc5cb935b4d&v=2",
     },
     {
       id: "24e4970f-7369-46ed-871b-a64ce2f3f3e0",
       email: "arij.chowdhuryr@gmail.com",
       display_name: "arij",
       status: "online",
-      avatar_url: "/api/chat/avatar?userId=24e4970f-7369-46ed-871b-a64ce2f3f3e0",
+      avatar_url: "/api/chat/avatar?userId=24e4970f-7369-46ed-871b-a64ce2f3f3e0&v=2",
     },
   ],
   conversations: [],
@@ -304,7 +304,7 @@ function normalizeAvatarUrl(url?: string): string {
   if (!url) return ""
   if (url.startsWith("/api/chat/avatar?userId=")) {
     const match = url.match(/\/api\/chat\/avatar\?userId=([a-zA-Z0-9_-]+)/)
-    if (match) return `/api/chat/avatar?userId=${match[1]}`
+    if (match) return `/api/chat/avatar?userId=${match[1]}&v=2`
   }
   return url
 }
@@ -328,7 +328,7 @@ export function getServerConversations(userId: string): ServerConversation[] {
         email: "wowarij@gmail.com",
         display_name: "orio",
         status: "online",
-        avatar_url: `/api/chat/avatar?userId=${pId}`,
+        avatar_url: `/api/chat/avatar?userId=${pId}&v=2`,
       }
     }
     if (pId === "24e4970f-7369-46ed-871b-a64ce2f3f3e0") {
@@ -337,7 +337,7 @@ export function getServerConversations(userId: string): ServerConversation[] {
         email: "arij.chowdhuryr@gmail.com",
         display_name: "arij",
         status: "online",
-        avatar_url: `/api/chat/avatar?userId=${pId}`,
+        avatar_url: `/api/chat/avatar?userId=${pId}&v=2`,
       }
     }
 
@@ -346,7 +346,7 @@ export function getServerConversations(userId: string): ServerConversation[] {
       email: `${pId.slice(0, 8)}@uchat.com`,
       display_name: pId.slice(0, 8),
       status: "online",
-      avatar_url: `/api/chat/avatar?userId=${pId}`,
+      avatar_url: `/api/chat/avatar?userId=${pId}&v=2`,
     }
   }
 

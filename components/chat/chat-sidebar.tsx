@@ -55,7 +55,7 @@ function cleanAvatarUrl(url?: string): string {
   if (!url) return ""
   if (url.startsWith("/api/chat/avatar?userId=")) {
     const match = url.match(/\/api\/chat\/avatar\?userId=([a-zA-Z0-9_-]+)/)
-    if (match) return `/api/chat/avatar?userId=${match[1]}`
+    if (match) return `/api/chat/avatar?userId=${match[1]}&v=2`
   }
   return url
 }

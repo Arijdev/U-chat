@@ -2,7 +2,7 @@
 
 # 💬 Arixo Web
 
-**A modern, production-grade WhatsApp Web clone built with Next.js 16, React 19, TypeScript, Tailwind CSS, Google Gemini AI, and WebRTC.**
+**A modern, production-grade Chat App built with Next.js 16, React 19, TypeScript, Tailwind CSS, Google Gemini AI, and WebRTC.**
 
 [![Live Demo](https://img.shields.io/badge/Live%20Demo-arixo--ten.vercel.app-25D366?style=for-the-badge&logo=vercel)](https://arixo-ten.vercel.app/)
 [![Next.js](https://img.shields.io/badge/Next.js-16.3-black?style=for-the-badge&logo=next.js)](https://nextjs.org/)
@@ -235,5 +235,5 @@ npm start
 Distributed under the MIT License. See `LICENSE` for more information.
 
 <div align="center">
-  <sub>Built with ❤️ by Arijit Chowdhury and the open-source community.</sub>
+  <sub>Built with ❤️ by Arij Chowdhury and the open-source community.</sub>
 </div>

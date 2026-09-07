@@ -57,7 +57,7 @@ export function ProfileDrawer({
   const initialAvatar =
     currentProfile?.avatar_url ||
     user.user_metadata?.avatar_url ||
-    `/api/chat/avatar?userId=${user.id}`
+    `/api/chat/avatar?userId=${user.id}&v=2`
 
   const [displayName, setDisplayName] = useState(initialName)
   const [status, setStatus] = useState(initialStatus)
@@ -204,7 +204,7 @@ export function ProfileDrawer({
           <div className="relative group">
             {avatarUrl || user.id ? (
               <img
-                src={avatarUrl || `/api/chat/avatar?userId=${user.id}`}
+                src={avatarUrl || `/api/chat/avatar?userId=${user.id}&v=2`}
                 alt="Profile"
                 className="w-48 h-48 rounded-full object-cover shadow-lg border-4 border-white dark:border-[#202c33]"
               />

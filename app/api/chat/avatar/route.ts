@@ -39,13 +39,17 @@ export async function GET(req: NextRequest) {
       return new NextResponse("Missing userId", { status: 400 })
     }
 
+    const imageHeaders = {
+      "Cache-Control": "public, max-age=300, stale-while-revalidate=600",
+    }
+
     // 1. Check in-memory runtime cache (fastest, supports live uploads without disk reads)
     const cached = runtimeAvatarCache.get(userId)
     if (cached) {
       return new NextResponse(new Uint8Array(cached.buffer), {
         headers: {
           "Content-Type": cached.mime,
-          "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800",
+          ...imageHeaders,
         },
       })
     }
@@ -54,12 +58,11 @@ export async function GET(req: NextRequest) {
     if (SEED_AVATARS[userId]) {
       const seed = SEED_AVATARS[userId]
       const buffer = Buffer.from(seed.base64, "base64")
-      // Populate memory cache
       runtimeAvatarCache.set(userId, { mime: seed.mime, buffer })
       return new NextResponse(new Uint8Array(buffer), {
         headers: {
           "Content-Type": seed.mime,
-          "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800",
+          ...imageHeaders,
         },
       })
     }
@@ -73,7 +76,7 @@ export async function GET(req: NextRequest) {
         return new NextResponse(new Uint8Array(buffer), {
           headers: {
             "Content-Type": "image/jpeg",
-            "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800",
+            ...imageHeaders,
           },
         })
       } catch (e) {
@@ -93,7 +96,7 @@ export async function GET(req: NextRequest) {
           return new NextResponse(new Uint8Array(buffer), {
             headers: {
               "Content-Type": mime,
-              "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800",
+              ...imageHeaders,
             },
           })
         }
@@ -117,7 +120,7 @@ export async function GET(req: NextRequest) {
             return new NextResponse(new Uint8Array(buffer), {
               headers: {
                 "Content-Type": mime,
-                "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800",
+                ...imageHeaders,
               },
             })
           }
@@ -139,7 +142,7 @@ export async function GET(req: NextRequest) {
           return new NextResponse(new Uint8Array(buffer), {
             headers: {
               "Content-Type": mime,
-              "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800",
+              ...imageHeaders,
             },
           })
         }
@@ -148,7 +151,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // 6. Graceful SVG initial avatar fallback (prevents 404/500 in browser console)
+    // 6. Graceful SVG initial avatar fallback (never cached on client so new photos display immediately)
     const name = user?.display_name || user?.email?.split("@")[0] || "U"
     const initial = (name[0] || "U").toUpperCase()
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100">
@@ -165,14 +168,17 @@ export async function GET(req: NextRequest) {
     return new NextResponse(svg, {
       headers: {
         "Content-Type": "image/svg+xml",
-        "Cache-Control": "public, max-age=3600",
+        "Cache-Control": "no-cache, no-store, must-revalidate",
       },
     })
   } catch (err: any) {
     console.error("Avatar GET error:", err)
     const fallbackSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><circle cx="50" cy="50" r="50" fill="#00a884"/></svg>`
     return new NextResponse(fallbackSvg, {
-      headers: { "Content-Type": "image/svg+xml" },
+      headers: {
+        "Content-Type": "image/svg+xml",
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+      },
     })
   }
 }
@@ -205,7 +211,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const publicUrl = `/api/chat/avatar?userId=${userId}&t=${Date.now()}`
+    const publicUrl = `/api/chat/avatar?userId=${userId}&v=${Date.now()}`
     updateServerUserProfile(userId, { avatar_url: publicUrl })
 
     return NextResponse.json({
