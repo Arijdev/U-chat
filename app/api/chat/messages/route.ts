@@ -14,18 +14,18 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const conversationId = searchParams.get("conversationId")
   const starredUserId = searchParams.get("starredUserId")
+  const userId = searchParams.get("userId")
 
   if (starredUserId) {
     const starred = getStarredMessages(starredUserId, conversationId)
     return NextResponse.json(starred)
   }
 
-
   if (!conversationId) {
     return NextResponse.json({ error: "Missing conversationId" }, { status: 400 })
   }
 
-  const messages = getServerMessages(conversationId)
+  const messages = getServerMessages(conversationId, userId || undefined)
   return NextResponse.json(messages)
 }
 
@@ -87,13 +87,15 @@ export async function DELETE(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url)
     const messageId = searchParams.get("messageId")
+    const mode = (searchParams.get("mode") || "for_everyone") as "for_me" | "for_everyone"
+    const userId = searchParams.get("userId") || ""
 
     if (!messageId) {
       return NextResponse.json({ error: "Missing messageId" }, { status: 400 })
     }
 
-    const success = deleteServerMessage(messageId)
-    return NextResponse.json({ ok: success })
+    const result = deleteServerMessage(messageId, mode, userId)
+    return NextResponse.json({ ok: result.success, ...result })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }

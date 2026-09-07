@@ -59,6 +59,7 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
   const [showGroupInfo, setShowGroupInfo] = useState(false)
   const [showStarredDrawer, setShowStarredDrawer] = useState(false)
   const [showChatMenu, setShowChatMenu] = useState(false)
+  const [messageToDelete, setMessageToDelete] = useState<any | null>(null)
   const chatMenuRef = useRef<HTMLDivElement>(null)
   const [replyingTo, setReplyingTo] = useState<{ id: string; content: string; sender_name: string } | null>(null)
 
@@ -188,8 +189,8 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
         }
       }
 
-      // 2. Get messages for this conversation
-      const msgList = await apiGetMessages(conversationId)
+      // 2. Get messages for this conversation (filtering out messages deleted for me)
+      const msgList = await apiGetMessages(conversationId, user.id)
       if (isSubscribed) {
         setMessages(msgList)
         setLoading(false)
@@ -242,6 +243,9 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
         case "message_updated": {
           const updatedMsg = event.payload
           if (updatedMsg && updatedMsg.conversation_id === conversationId) {
+            if (updatedMsg.is_deleted_for_everyone) {
+              decryptedMessagesRef.current.delete(updatedMsg.id)
+            }
             setMessages((prev) =>
               prev.map((m) => (m.id === updatedMsg.id ? { ...m, ...updatedMsg } : m))
             )
@@ -259,7 +263,7 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
 
         case "heartbeat_poll": {
           // Quiet background sync to ensure zero missed messages without deleting in-flight messages
-          apiGetMessages(conversationId).then((latest) => {
+          apiGetMessages(conversationId, user.id).then((latest) => {
             if (!isSubscribed) return
             setMessages((prev) => {
               const pendingOptimistic = prev.filter(
@@ -589,14 +593,45 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
     return `${mins}:${secs < 10 ? "0" : ""}${secs}`
   }
 
-  const handleDeleteMessage = useCallback(
-    async (messageId: string) => {
-      setMessages((prev) => prev.filter((m) => m.id !== messageId))
-      decryptedMessagesRef.current.delete(messageId)
-      await apiDeleteMessage(messageId)
-    },
-    [],
-  )
+  const handleDeleteMessage = useCallback((msg: any) => {
+    setMessageToDelete(msg)
+  }, [])
+
+  const confirmDelete = async (mode: "for_everyone" | "for_me") => {
+    if (!messageToDelete) return
+    const targetMsg = messageToDelete
+    const targetId = targetMsg.id
+    setMessageToDelete(null)
+
+    if (mode === "for_everyone") {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === targetId
+            ? {
+                ...m,
+                is_deleted_for_everyone: true,
+                content: "This message was deleted",
+                media_url: undefined,
+                file_name: undefined,
+                file_size: undefined,
+                reactions: {},
+                is_starred: false,
+              }
+            : m
+        )
+      )
+      decryptedMessagesRef.current.delete(targetId)
+    } else {
+      setMessages((prev) => prev.filter((m) => m.id !== targetId))
+      decryptedMessagesRef.current.delete(targetId)
+    }
+
+    try {
+      await apiDeleteMessage(targetId, mode, user.id)
+    } catch (e) {
+      console.error("Failed to delete message:", e)
+    }
+  }
 
   // CALL HANDLERS
   const handleCall = (type: "voice" | "video") => {
@@ -1061,7 +1096,7 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
         }}
         onClearChat={async () => {
           for (const m of messages) {
-            await apiDeleteMessage(m.id)
+            await apiDeleteMessage(m.id, "for_me", user.id)
           }
           setMessages([])
         }}
@@ -1097,7 +1132,6 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
       />
     )}
 
-
     {/* WhatsApp In-Chat Starred Messages Drawer */}
     {showStarredDrawer && (
       <StarredMessagesDrawer
@@ -1107,6 +1141,61 @@ export default function ChatWindow({ conversationId, user, onBack, onStartCall }
         onClose={() => setShowStarredDrawer(false)}
         onSelectConversation={() => setShowStarredDrawer(false)}
       />
+    )}
+
+    {/* WhatsApp Style Delete Confirmation Modal */}
+    {messageToDelete && (
+      <div
+        className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in-50"
+        onClick={() => setMessageToDelete(null)}
+      >
+        <div
+          className="bg-card text-card-foreground border border-border/80 w-full max-w-sm rounded-2xl shadow-2xl p-6 space-y-4 animate-in zoom-in-95"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="space-y-1.5">
+            <h3 className="text-base font-semibold text-foreground">
+              Delete message?
+            </h3>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              {messageToDelete.sender_id === user.id && !messageToDelete.is_deleted_for_everyone
+                ? "You can delete this message for everyone or just for yourself."
+                : "Delete this message for yourself? It will remain visible to others in the chat."}
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-2 pt-2">
+            {/* Delete for everyone (available for own messages that aren't already deleted for everyone) */}
+            {messageToDelete.sender_id === user.id && !messageToDelete.is_deleted_for_everyone && (
+              <Button
+                variant="destructive"
+                onClick={() => confirmDelete("for_everyone")}
+                className="w-full justify-center text-xs font-semibold py-2.5 rounded-xl cursor-pointer"
+              >
+                Delete for everyone
+              </Button>
+            )}
+
+            {/* Delete for me (always available for any message) */}
+            <Button
+              variant="outline"
+              onClick={() => confirmDelete("for_me")}
+              className="w-full justify-center text-xs font-medium py-2.5 rounded-xl hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 transition-colors cursor-pointer"
+            >
+              Delete for me
+            </Button>
+
+            {/* Cancel */}
+            <Button
+              variant="ghost"
+              onClick={() => setMessageToDelete(null)}
+              className="w-full justify-center text-xs text-muted-foreground py-2 rounded-xl cursor-pointer"
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </div>
     )}
   </div>
 </div>

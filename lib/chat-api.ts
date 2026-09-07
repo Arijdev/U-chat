@@ -40,6 +40,9 @@ export interface ChatMessage {
   }
   reactions?: Record<string, string[]>
   is_starred?: boolean
+  starred_by?: string[]
+  is_deleted_for_everyone?: boolean
+  deleted_for?: string[]
   created_at: string
 }
 
@@ -100,9 +103,12 @@ export async function apiCreateConversation(participant1Id: string, participant2
   return await res.json()
 }
 
-export async function apiGetMessages(conversationId: string): Promise<ChatMessage[]> {
+export async function apiGetMessages(conversationId: string, userId?: string): Promise<ChatMessage[]> {
   try {
-    const res = await fetch(`/api/chat/messages?conversationId=${encodeURIComponent(conversationId)}`)
+    const url = userId
+      ? `/api/chat/messages?conversationId=${encodeURIComponent(conversationId)}&userId=${encodeURIComponent(userId)}`
+      : `/api/chat/messages?conversationId=${encodeURIComponent(conversationId)}`
+    const res = await fetch(url)
     if (!res.ok) return []
     return await res.json()
   } catch (e) {
@@ -121,11 +127,18 @@ export async function apiSendMessage(
   return await res.json()
 }
 
-export async function apiDeleteMessage(messageId: string): Promise<boolean> {
+export async function apiDeleteMessage(
+  messageId: string,
+  mode: "for_me" | "for_everyone" = "for_everyone",
+  userId: string = ""
+): Promise<boolean> {
   try {
-    const res = await fetch(`/api/chat/messages?messageId=${encodeURIComponent(messageId)}`, {
-      method: "DELETE",
-    })
+    const res = await fetch(
+      `/api/chat/messages?messageId=${encodeURIComponent(messageId)}&mode=${encodeURIComponent(mode)}&userId=${encodeURIComponent(userId)}`,
+      {
+        method: "DELETE",
+      }
+    )
     return res.ok
   } catch (e) {
     return false

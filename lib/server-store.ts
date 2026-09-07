@@ -43,6 +43,8 @@ export interface ServerMessage {
   reactions?: Record<string, string[]> // emoji -> [userId1, userId2]
   is_starred?: boolean
   starred_by?: string[]
+  is_deleted_for_everyone?: boolean
+  deleted_for?: string[]
   created_at: string
 }
 
@@ -361,9 +363,15 @@ export function createServerConversation(participant1Id: string, participant2Id:
   return newConv
 }
 
-export function getServerMessages(conversationId: string): ServerMessage[] {
+export function getServerMessages(conversationId: string, userId?: string): ServerMessage[] {
   return store.messages
-    .filter((m) => m.conversation_id === conversationId)
+    .filter((m) => {
+      if (m.conversation_id !== conversationId) return false
+      if (userId && Array.isArray(m.deleted_for) && m.deleted_for.includes(userId)) {
+        return false
+      }
+      return true
+    })
     .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
 }
 
@@ -481,6 +489,8 @@ export function getStarredMessages(userId: string, conversationId?: string | nul
 
   return store.messages
     .filter((m) => {
+      if (m.is_deleted_for_everyone) return false
+      if (Array.isArray(m.deleted_for) && m.deleted_for.includes(userId)) return false
       if (conversationId && m.conversation_id !== conversationId) return false
       const isStarredForUser =
         (Array.isArray(m.starred_by) && m.starred_by.includes(userId)) ||
@@ -528,20 +538,58 @@ export function toggleArchiveConversation(conversationId: string, isArchived: bo
   return true
 }
 
-export function deleteServerMessage(messageId: string): boolean {
+export function deleteServerMessage(
+  messageId: string,
+  mode: "for_me" | "for_everyone" = "for_everyone",
+  userId: string = ""
+): { success: boolean; mode: string; message?: ServerMessage } {
   const msg = store.messages.find((m) => m.id === messageId)
-  if (!msg) return false
-
-  store.messages = store.messages.filter((m) => m.id !== messageId)
-  saveStore()
+  if (!msg) return { success: false, mode }
 
   const conv = store.conversations.find((c) => c.id === msg.conversation_id)
-  if (conv) {
-    notifyUser(conv.participant_1_id, { type: "message_deleted", payload: { conversationId: conv.id, messageId } })
-    notifyUser(conv.participant_2_id, { type: "message_deleted", payload: { conversationId: conv.id, messageId } })
-  }
+  const participants = conv
+    ? conv.is_group && conv.group_members
+      ? conv.group_members
+      : [conv.participant_1_id, conv.participant_2_id]
+    : []
 
-  return true
+  if (mode === "for_everyone") {
+    // Delete for everyone: keep revoked placeholder, clear sensitive payload
+    msg.is_deleted_for_everyone = true
+    msg.content = "This message was deleted"
+    msg.media_url = undefined
+    msg.file_name = undefined
+    msg.file_size = undefined
+    msg.reactions = {}
+    msg.is_starred = false
+    msg.starred_by = []
+    saveStore()
+
+    // Real-time broadcast to all participants (direct or group)
+    participants.forEach((pId) => {
+      notifyUser(pId, { type: "message_updated", payload: msg })
+    })
+
+    return { success: true, mode: "for_everyone", message: msg }
+  } else {
+    // Delete for me: hide only for this specific user
+    if (!Array.isArray(msg.deleted_for)) {
+      msg.deleted_for = []
+    }
+    if (userId && !msg.deleted_for.includes(userId)) {
+      msg.deleted_for.push(userId)
+    }
+    saveStore()
+
+    if (userId) {
+      notifyUser(userId, {
+        type: "message_deleted",
+        payload: { conversationId: msg.conversation_id, messageId, forMe: true },
+      })
+    }
+
+    return { success: true, mode: "for_me", message: msg }
+  }
 }
 
 // CALLS & SIGNALING

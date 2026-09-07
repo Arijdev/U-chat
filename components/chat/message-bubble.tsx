@@ -14,6 +14,7 @@ import {
   Smile,
   MoreVertical,
   ChevronDown,
+  Ban,
 } from "lucide-react"
 
 interface MessageBubbleProps {
@@ -23,7 +24,7 @@ interface MessageBubbleProps {
   isGroup?: boolean
   senderName?: string
   onGetDecrypted: (msg: any) => Promise<string>
-  onDelete: (id: string) => void
+  onDelete: (msg: any) => void
   onReply?: (msg: any) => void
   onReact?: (msgId: string, emoji: string) => void
   onStar?: (msgId: string, isStarred: boolean) => void
@@ -154,113 +155,123 @@ export const MessageBubble = memo(function MessageBubble({
           </div>
         )}
 
-        {/* Photo Message */}
-        {msg.message_type === "photo" && msg.media_url && (
-          <div className="space-y-1.5">
-            <a
-              href={msg.media_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block overflow-hidden rounded-xl"
-            >
-              <img
-                src={msg.media_url}
-                alt="Shared photo"
-                className="max-w-full max-h-80 rounded-xl object-contain hover:scale-[1.01] transition-transform"
-              />
-            </a>
-            {content && content !== "Shared a photo" && (
-              <p className="text-sm leading-relaxed break-words">{content}</p>
-            )}
+        {/* Revoked / Deleted Message */}
+        {msg.is_deleted_for_everyone ? (
+          <div className="flex items-center gap-2 italic text-xs text-muted-foreground/80 py-1 select-none pr-6">
+            <Ban className="w-3.5 h-3.5 shrink-0 opacity-60 text-muted-foreground" />
+            <span>{isOwn ? "You deleted this message" : "This message was deleted"}</span>
           </div>
-        )}
-
-        {/* Video Message */}
-        {msg.message_type === "video" && msg.media_url && (
-          <div className="space-y-1.5">
-            <video
-              src={msg.media_url}
-              controls
-              className="max-w-full max-h-80 rounded-xl object-contain bg-black/50"
-            />
-            {content && content !== "Shared a video" && (
-              <p className="text-sm leading-relaxed break-words">{content}</p>
-            )}
-          </div>
-        )}
-
-        {/* Document Message */}
-        {msg.message_type === "document" && msg.media_url && (
-          <div className="space-y-2">
-            <div className="flex items-center gap-3 p-2.5 rounded-xl bg-black/5 dark:bg-white/5 border border-border/30">
-              <div className="w-10 h-10 rounded-lg bg-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
-                <FileText className="w-5 h-5" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-xs font-semibold truncate text-foreground">
-                  {msg.file_name || content || "Document"}
-                </p>
-                {msg.file_size && (
-                  <p className="text-[10px] text-muted-foreground">{formatFileSize(msg.file_size)}</p>
+        ) : (
+          <>
+            {/* Photo Message */}
+            {msg.message_type === "photo" && msg.media_url && (
+              <div className="space-y-1.5">
+                <a
+                  href={msg.media_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block overflow-hidden rounded-xl"
+                >
+                  <img
+                    src={msg.media_url}
+                    alt="Shared photo"
+                    className="max-w-full max-h-80 rounded-xl object-contain hover:scale-[1.01] transition-transform"
+                  />
+                </a>
+                {content && content !== "Shared a photo" && (
+                  <p className="text-sm leading-relaxed break-words">{content}</p>
                 )}
               </div>
-              <a
-                href={msg.media_url}
-                download={msg.file_name || "document"}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="p-2 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary transition-colors cursor-pointer shrink-0"
-                title="Download"
-              >
-                <Download className="w-4 h-4" />
-              </a>
-            </div>
-            {content && content !== (msg.file_name || "Document") && (
-              <p className="text-sm leading-relaxed break-words">{content}</p>
             )}
-          </div>
-        )}
 
-        {/* Voice Note Message with Waveform & Speed Toggle */}
-        {msg.message_type === "audio" && msg.media_url && (
-          <div className="flex items-center gap-3 py-1 min-w-[220px]">
-            <button
-              onClick={() => toggleAudio(msg.media_url)}
-              className="w-10 h-10 rounded-full bg-emerald-600 text-white flex items-center justify-center shadow-xs hover:bg-emerald-700 transition-colors shrink-0 cursor-pointer"
-            >
-              {isPlayingAudio ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
-            </button>
-
-            {/* Sound Waveform Visualization */}
-            <div className="flex-1 flex flex-col justify-center gap-1.5">
-              <div className="flex items-center gap-0.5 h-6">
-                {[4, 12, 8, 16, 10, 18, 14, 6, 15, 9, 12, 16, 7, 14, 8, 12].map((height, i) => (
-                  <div
-                    key={i}
-                    className={`w-1 rounded-full transition-all ${
-                      isPlayingAudio ? "bg-emerald-600 animate-pulse" : "bg-foreground/30"
-                    }`}
-                    style={{ height: `${height}px` }}
-                  />
-                ))}
+            {/* Video Message */}
+            {msg.message_type === "video" && msg.media_url && (
+              <div className="space-y-1.5">
+                <video
+                  src={msg.media_url}
+                  controls
+                  className="max-w-full max-h-80 rounded-xl object-contain bg-black/50"
+                />
+                {content && content !== "Shared a video" && (
+                  <p className="text-sm leading-relaxed break-words">{content}</p>
+                )}
               </div>
-              <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-                <span>Voice message</span>
+            )}
+
+            {/* Document Message */}
+            {msg.message_type === "document" && msg.media_url && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-3 p-2.5 rounded-xl bg-black/5 dark:bg-white/5 border border-border/30">
+                  <div className="w-10 h-10 rounded-lg bg-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                    <FileText className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-semibold truncate text-foreground">
+                      {msg.file_name || content || "Document"}
+                    </p>
+                    {msg.file_size && (
+                      <p className="text-[10px] text-muted-foreground">{formatFileSize(msg.file_size)}</p>
+                    )}
+                  </div>
+                  <a
+                    href={msg.media_url}
+                    download={msg.file_name || "document"}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-2 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary transition-colors cursor-pointer shrink-0"
+                    title="Download"
+                  >
+                    <Download className="w-4 h-4" />
+                  </a>
+                </div>
+                {content && content !== (msg.file_name || "Document") && (
+                  <p className="text-sm leading-relaxed break-words">{content}</p>
+                )}
+              </div>
+            )}
+
+            {/* Voice Note Message with Waveform & Speed Toggle */}
+            {msg.message_type === "audio" && msg.media_url && (
+              <div className="flex items-center gap-3 py-1 min-w-[220px]">
                 <button
-                  onClick={cycleSpeed}
-                  className="px-1.5 py-0.5 rounded-full bg-black/10 dark:bg-white/10 font-mono font-bold text-foreground cursor-pointer hover:bg-black/20"
-                  title="Playback Speed"
+                  onClick={() => toggleAudio(msg.media_url)}
+                  className="w-10 h-10 rounded-full bg-emerald-600 text-white flex items-center justify-center shadow-xs hover:bg-emerald-700 transition-colors shrink-0 cursor-pointer"
                 >
-                  {playbackSpeed}x
+                  {isPlayingAudio ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
                 </button>
-              </div>
-            </div>
-          </div>
-        )}
 
-        {/* Regular Text Message */}
-        {(!msg.message_type || msg.message_type === "text") && (
-          <p className="break-words text-sm leading-relaxed whitespace-pre-wrap">{content}</p>
+                {/* Sound Waveform Visualization */}
+                <div className="flex-1 flex flex-col justify-center gap-1.5">
+                  <div className="flex items-center gap-0.5 h-6">
+                    {[4, 12, 8, 16, 10, 18, 14, 6, 15, 9, 12, 16, 7, 14, 8, 12].map((height, i) => (
+                      <div
+                        key={i}
+                        className={`w-1 rounded-full transition-all ${
+                          isPlayingAudio ? "bg-emerald-600 animate-pulse" : "bg-foreground/30"
+                        }`}
+                        style={{ height: `${height}px` }}
+                      />
+                    ))}
+                  </div>
+                  <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                    <span>Voice message</span>
+                    <button
+                      onClick={cycleSpeed}
+                      className="px-1.5 py-0.5 rounded-full bg-black/10 dark:bg-white/10 font-mono font-bold text-foreground cursor-pointer hover:bg-black/20"
+                      title="Playback Speed"
+                    >
+                      {playbackSpeed}x
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Regular Text Message */}
+            {(!msg.message_type || msg.message_type === "text") && (
+              <p className="break-words text-sm leading-relaxed whitespace-pre-wrap">{content}</p>
+            )}
+          </>
         )}
 
         {/* WhatsApp Top-Right Options Chevron Button */}
@@ -284,74 +295,88 @@ export const MessageBubble = memo(function MessageBubble({
             className={`absolute top-7 ${isOwn ? "right-2" : "left-2 md:right-auto"} w-44 bg-card text-card-foreground border border-border rounded-xl shadow-xl py-1 z-30 animate-in fade-in-50 zoom-in-95 select-none`}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Star / Unstar Option */}
-            {onStar && (
+            {msg.is_deleted_for_everyone ? (
+              /* If message was already deleted for everyone, only option is delete for me */
               <button
                 onClick={() => {
-                  onStar(msg.id, !isStarred)
+                  onDelete(msg)
                   setShowMenu(false)
                 }}
-                className="w-full flex items-center gap-3 px-3.5 py-2 text-xs hover:bg-muted/80 transition-colors text-left cursor-pointer"
-              >
-                <Star className={`w-3.5 h-3.5 ${isStarred ? "text-amber-500 fill-amber-500" : "text-muted-foreground"}`} />
-                <span>{isStarred ? "Unstar message" : "Star message"}</span>
-              </button>
-            )}
-
-            {/* Reply */}
-            {onReply && (
-              <button
-                onClick={() => {
-                  onReply({ id: msg.id, content, sender_name: isOwn ? "You" : "Contact" })
-                  setShowMenu(false)
-                }}
-                className="w-full flex items-center gap-3 px-3.5 py-2 text-xs hover:bg-muted/80 transition-colors text-left cursor-pointer"
-              >
-                <Reply className="w-3.5 h-3.5 text-muted-foreground" />
-                <span>Reply</span>
-              </button>
-            )}
-
-            {/* React */}
-            <button
-              onClick={() => {
-                setShowReactionPicker(true)
-                setShowMenu(false)
-              }}
-              className="w-full flex items-center gap-3 px-3.5 py-2 text-xs hover:bg-muted/80 transition-colors text-left cursor-pointer"
-            >
-              <Smile className="w-3.5 h-3.5 text-muted-foreground" />
-              <span>React to message</span>
-            </button>
-
-            {/* Copy */}
-            <button
-              onClick={copyToClipboard}
-              className="w-full flex items-center gap-3 px-3.5 py-2 text-xs hover:bg-muted/80 transition-colors text-left cursor-pointer"
-            >
-              <Copy className="w-3.5 h-3.5 text-muted-foreground" />
-              <span>{copied ? "Copied!" : "Copy text"}</span>
-            </button>
-
-            {/* Delete */}
-            {isOwn && (
-              <button
-                onClick={() => {
-                  onDelete(msg.id)
-                  setShowMenu(false)
-                }}
-                className="w-full flex items-center gap-3 px-3.5 py-2 text-xs text-destructive hover:bg-destructive/10 transition-colors text-left cursor-pointer border-t border-border/50"
+                className="w-full flex items-center gap-3 px-3.5 py-2 text-xs text-destructive hover:bg-destructive/10 transition-colors text-left cursor-pointer"
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 <span>Delete message</span>
               </button>
+            ) : (
+              <>
+                {/* Star / Unstar Option */}
+                {onStar && (
+                  <button
+                    onClick={() => {
+                      onStar(msg.id, !isStarred)
+                      setShowMenu(false)
+                    }}
+                    className="w-full flex items-center gap-3 px-3.5 py-2 text-xs hover:bg-muted/80 transition-colors text-left cursor-pointer"
+                  >
+                    <Star className={`w-3.5 h-3.5 ${isStarred ? "text-amber-500 fill-amber-500" : "text-muted-foreground"}`} />
+                    <span>{isStarred ? "Unstar message" : "Star message"}</span>
+                  </button>
+                )}
+
+                {/* Reply */}
+                {onReply && (
+                  <button
+                    onClick={() => {
+                      onReply({ id: msg.id, content, sender_name: isOwn ? "You" : "Contact" })
+                      setShowMenu(false)
+                    }}
+                    className="w-full flex items-center gap-3 px-3.5 py-2 text-xs hover:bg-muted/80 transition-colors text-left cursor-pointer"
+                  >
+                    <Reply className="w-3.5 h-3.5 text-muted-foreground" />
+                    <span>Reply</span>
+                  </button>
+                )}
+
+                {/* React */}
+                <button
+                  onClick={() => {
+                    setShowReactionPicker(true)
+                    setShowMenu(false)
+                  }}
+                  className="w-full flex items-center gap-3 px-3.5 py-2 text-xs hover:bg-muted/80 transition-colors text-left cursor-pointer"
+                >
+                  <Smile className="w-3.5 h-3.5 text-muted-foreground" />
+                  <span>React to message</span>
+                </button>
+
+                {/* Copy */}
+                <button
+                  onClick={copyToClipboard}
+                  className="w-full flex items-center gap-3 px-3.5 py-2 text-xs hover:bg-muted/80 transition-colors text-left cursor-pointer"
+                >
+                  <Copy className="w-3.5 h-3.5 text-muted-foreground" />
+                  <span>{copied ? "Copied!" : "Copy text"}</span>
+                </button>
+
+                {/* Delete (Available for both own and received messages) */}
+                <button
+                  onClick={() => {
+                    onDelete(msg)
+                    setShowMenu(false)
+                  }}
+                  className="w-full flex items-center gap-3 px-3.5 py-2 text-xs text-destructive hover:bg-destructive/10 transition-colors text-left cursor-pointer border-t border-border/50"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete message</span>
+                </button>
+              </>
             )}
           </div>
         )}
 
         {/* Bottom Row: Timestamp, Star & Status Ticks */}
         <div className="flex items-center justify-end gap-1.5 mt-1 text-[10px] text-muted-foreground select-none">
-          {isStarred && (
+          {!msg.is_deleted_for_everyone && isStarred && (
             <span title="Starred message">
               <Star className="w-3 h-3 text-amber-500 fill-amber-500 shrink-0 animate-in zoom-in-50" />
             </span>
@@ -359,7 +384,7 @@ export const MessageBubble = memo(function MessageBubble({
           <span>
             {new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
           </span>
-          {isOwn && (
+          {!msg.is_deleted_for_everyone && isOwn && (
             <span className="text-[#53bdeb]" title="Delivered & Read">
               <CheckCheck className="w-3.5 h-3.5" />
             </span>
@@ -367,7 +392,7 @@ export const MessageBubble = memo(function MessageBubble({
         </div>
 
         {/* Reactions Counter Badge (Pinned to bottom) */}
-        {activeReactions.length > 0 && (
+        {!msg.is_deleted_for_everyone && activeReactions.length > 0 && (
           <div className="absolute -bottom-2.5 left-3 bg-card border border-border px-1.5 py-0.5 rounded-full shadow-xs flex items-center gap-1 text-xs select-none">
             {activeReactions.map(([emoji, users]: any) => (
               <span key={emoji} className="flex items-center gap-0.5">
@@ -379,58 +404,58 @@ export const MessageBubble = memo(function MessageBubble({
         )}
 
         {/* Floating Quick Action Bar (Top of Bubble on Hover) */}
-        <div className="absolute -top-3.5 right-2 hidden group-hover:flex items-center gap-0.5 bg-card/95 backdrop-blur-xs border border-border p-0.5 rounded-full shadow-md z-20 select-none">
-          {/* Reaction Trigger Button */}
-          <button
-            onClick={() => setShowReactionPicker(!showReactionPicker)}
-            className="p-1 text-muted-foreground hover:text-emerald-600 rounded-full hover:bg-muted cursor-pointer"
-            title="React with emoji"
-          >
-            <Smile className="w-3.5 h-3.5" />
-          </button>
-
-          {/* Reply Button */}
-          {onReply && (
+        {!msg.is_deleted_for_everyone && (
+          <div className="absolute -top-3.5 right-2 hidden group-hover:flex items-center gap-0.5 bg-card/95 backdrop-blur-xs border border-border p-0.5 rounded-full shadow-md z-20 select-none">
+            {/* Reaction Trigger Button */}
             <button
-              onClick={() => onReply({ id: msg.id, content, sender_name: isOwn ? "You" : "Contact" })}
+              onClick={() => setShowReactionPicker(!showReactionPicker)}
               className="p-1 text-muted-foreground hover:text-emerald-600 rounded-full hover:bg-muted cursor-pointer"
-              title="Reply"
+              title="React with emoji"
             >
-              <Reply className="w-3.5 h-3.5" />
+              <Smile className="w-3.5 h-3.5" />
             </button>
-          )}
 
-          {/* Star Button */}
-          {onStar && (
+            {/* Reply Button */}
+            {onReply && (
+              <button
+                onClick={() => onReply({ id: msg.id, content, sender_name: isOwn ? "You" : "Contact" })}
+                className="p-1 text-muted-foreground hover:text-emerald-600 rounded-full hover:bg-muted cursor-pointer"
+                title="Reply"
+              >
+                <Reply className="w-3.5 h-3.5" />
+              </button>
+            )}
+
+            {/* Star Button */}
+            {onStar && (
+              <button
+                onClick={() => onStar(msg.id, !isStarred)}
+                className="p-1 text-muted-foreground hover:text-amber-500 rounded-full hover:bg-muted cursor-pointer"
+                title={isStarred ? "Unstar" : "Star"}
+              >
+                <Star className={`w-3.5 h-3.5 ${isStarred ? "text-amber-500 fill-amber-500" : ""}`} />
+              </button>
+            )}
+
+            {/* Copy Button */}
             <button
-              onClick={() => onStar(msg.id, !isStarred)}
-              className="p-1 text-muted-foreground hover:text-amber-500 rounded-full hover:bg-muted cursor-pointer"
-              title={isStarred ? "Unstar" : "Star"}
+              onClick={copyToClipboard}
+              className="p-1 text-muted-foreground hover:text-foreground rounded-full hover:bg-muted cursor-pointer"
+              title={copied ? "Copied!" : "Copy"}
             >
-              <Star className={`w-3.5 h-3.5 ${isStarred ? "text-amber-500 fill-amber-500" : ""}`} />
+              <Copy className="w-3.5 h-3.5" />
             </button>
-          )}
 
-          {/* Copy Button */}
-          <button
-            onClick={copyToClipboard}
-            className="p-1 text-muted-foreground hover:text-foreground rounded-full hover:bg-muted cursor-pointer"
-            title={copied ? "Copied!" : "Copy"}
-          >
-            <Copy className="w-3.5 h-3.5" />
-          </button>
-
-          {/* Delete Button */}
-          {isOwn && (
+            {/* Delete Button */}
             <button
-              onClick={() => onDelete(msg.id)}
+              onClick={() => onDelete(msg)}
               className="p-1 text-destructive hover:text-destructive/80 rounded-full hover:bg-destructive/10 cursor-pointer"
               title="Delete"
             >
               <Trash2 className="w-3.5 h-3.5" />
             </button>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Floating WhatsApp Quick Emoji Picker */}
         {showReactionPicker && (
