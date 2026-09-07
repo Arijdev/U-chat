@@ -6,7 +6,7 @@ export default function Loading() {
           <div className="absolute inset-0 rounded-full border-4 border-blue-500/20"></div>
           <div className="absolute inset-0 rounded-full border-4 border-blue-500 border-t-transparent animate-spin"></div>
         </div>
-        <p className="text-sm font-medium text-gray-400 animate-pulse tracking-wide">Loading U-Chat...</p>
+        <p className="text-sm font-medium text-emerald-400 animate-pulse tracking-wide">Loading WhatsApp Web...</p>
       </div>
     </div>
   )

@@ -159,6 +159,11 @@ export default function ChatLayout({ user }: { user: User }) {
   }, [user.id, loadConversations])
 
   // Play incoming ringtone when receiving a call
+  // Ensure document title is WhatsApp Web
+  useEffect(() => {
+    document.title = "WhatsApp Web"
+  }, [])
+
   useEffect(() => {
     if (incomingCall) {
       playIncomingRingtone()

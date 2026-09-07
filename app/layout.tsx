@@ -9,31 +9,31 @@ const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono"
 
 export const metadata: Metadata = {
   title: {
-    default: 'U-Chat — Real-Time Encrypted Chat & Video Calling',
-    template: '%s | U-Chat',
+    default: 'WhatsApp Web',
+    template: '%s | WhatsApp Web',
   },
   description:
-    'Experience lightning-fast encrypted real-time messaging, stories, and peer-to-peer HD voice and video calling.',
-  applicationName: 'U-Chat',
-  keywords: ['chat', 'messaging', 'video call', 'webrtc', 'encrypted chat', 'realtime'],
-  authors: [{ name: 'Arijdev' }],
-  creator: 'U-Chat Team',
+    'WhatsApp Web — Simple. Reliable. Private. Real-time messaging, audio and video calling right from your browser.',
+  applicationName: 'WhatsApp Web',
+  keywords: ['whatsapp web', 'whatsapp', 'chat', 'messaging', 'video call', 'encrypted messaging'],
+  authors: [{ name: 'WhatsApp' }],
+  creator: 'WhatsApp Web',
   icons: {
     icon: '/favicon.ico',
   },
   openGraph: {
     type: 'website',
     locale: 'en_US',
-    siteName: 'U-Chat',
-    title: 'U-Chat — Real-Time Encrypted Chat & Video Calling',
+    siteName: 'WhatsApp Web',
+    title: 'WhatsApp Web',
     description:
-      'Lightning-fast encrypted real-time messaging, stories, and peer-to-peer HD voice and video calling.',
+      'Simple. Reliable. Private. Real-time messaging, audio and video calling right from your browser.',
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'U-Chat — Real-Time Encrypted Chat & Video Calling',
+    title: 'WhatsApp Web',
     description:
-      'Lightning-fast encrypted real-time messaging, stories, and peer-to-peer HD voice and video calling.',
+      'Simple. Reliable. Private. Real-time messaging, audio and video calling right from your browser.',
   },
   robots: {
     index: true,

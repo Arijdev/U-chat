@@ -77,12 +77,12 @@ export default function SignUpPage() {
         <Card className="border border-border bg-card/90 backdrop-blur-md shadow-2xl rounded-2xl">
           <CardHeader className="space-y-4 text-center">
             <div className="flex justify-center">
-              <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center text-white shadow-sm">
+              <div className="w-12 h-12 bg-emerald-600 rounded-xl flex items-center justify-center text-white shadow-sm">
                 <MessageSquare className="w-6 h-6" />
               </div>
             </div>
             <div>
-              <CardTitle className="text-2xl font-bold tracking-tight">Join U-Chat</CardTitle>
+              <CardTitle className="text-2xl font-bold tracking-tight">Join WhatsApp Web</CardTitle>
               <CardDescription className="text-muted-foreground">Create your account to get started</CardDescription>
             </div>
           </CardHeader>

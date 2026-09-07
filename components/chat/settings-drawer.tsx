@@ -483,7 +483,7 @@ export function SettingsDrawer({ user, onClose, onOpenProfile }: SettingsDrawerP
             <h3 className="text-base font-bold text-foreground">WhatsApp Web</h3>
             <p className="text-xs text-muted-foreground">Version 2.3000.101 • End-to-End Encrypted</p>
             <div className="bg-card rounded-xl p-3 border border-border text-left space-y-2 text-xs text-muted-foreground">
-              <p className="font-semibold text-foreground">About U-Chat</p>
+              <p className="font-semibold text-foreground">About WhatsApp Web</p>
               <p>Built with Next.js Turbopack, WebRTC Peer-to-Peer real-time audio & video streaming, and AES-256 GCM encryption.</p>
             </div>
           </div>
