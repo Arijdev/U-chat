@@ -20,13 +20,26 @@ export default function LoginPage() {
   const router = useRouter()
 
   useEffect(() => {
-    if (typeof document !== "undefined") {
-      document.cookie.split(";").forEach((c) => {
-        const name = c.split("=")[0].trim()
-        if (name.startsWith("sb-") && name.includes("auth-token")) {
-          document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`
+    if (typeof window !== "undefined") {
+      try {
+        document.cookie.split(";").forEach((c) => {
+          const name = c.split("=")[0].trim()
+          if (name.startsWith("sb-") && name.includes("auth-token")) {
+            document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`
+          }
+        })
+        const keysToRemove: string[] = []
+        for (let i = 0; i < window.localStorage.length; i++) {
+          const key = window.localStorage.key(i)
+          if (key && (key.includes("auth-token") || key.startsWith("sb-"))) {
+            const val = window.localStorage.getItem(key)
+            if (val && val.length > 3000) {
+              keysToRemove.push(key)
+            }
+          }
         }
-      })
+        keysToRemove.forEach((k) => window.localStorage.removeItem(k))
+      } catch (e) {}
     }
   }, [])
 

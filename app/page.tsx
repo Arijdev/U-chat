@@ -39,14 +39,27 @@ export default function Home() {
     const randomCode = `${Math.floor(100 + Math.random() * 900)}-${Math.floor(100 + Math.random() * 900)}`
     setPairingCode(randomCode)
 
-    // Clear legacy auth tokens to prevent header overflow
-    if (typeof document !== "undefined") {
-      document.cookie.split(";").forEach((c) => {
-        const name = c.split("=")[0].trim()
-        if (name.startsWith("sb-") && name.includes("auth-token")) {
-          document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`
+    // Clear legacy auth tokens & bloated localStorage tokens to prevent Cloudflare header overflow
+    if (typeof window !== "undefined") {
+      try {
+        document.cookie.split(";").forEach((c) => {
+          const name = c.split("=")[0].trim()
+          if (name.startsWith("sb-") && name.includes("auth-token")) {
+            document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`
+          }
+        })
+        const keysToRemove: string[] = []
+        for (let i = 0; i < window.localStorage.length; i++) {
+          const key = window.localStorage.key(i)
+          if (key && (key.includes("auth-token") || key.startsWith("sb-"))) {
+            const val = window.localStorage.getItem(key)
+            if (val && val.length > 3000) {
+              keysToRemove.push(key)
+            }
+          }
         }
-      })
+        keysToRemove.forEach((k) => window.localStorage.removeItem(k))
+      } catch (e) {}
     }
 
     const checkSession = async () => {
